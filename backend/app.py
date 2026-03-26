@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, redirect, url_for
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from db import get_db_connection
 
@@ -23,17 +23,93 @@ DB_NAME = os.getenv("DB_NAME")
 con = get_db_connection()
 
 app = Flask(__name__, static_folder='../frontend/public', static_url_path='/')
+app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "super-secret-change-me")
 
-@app.route('/')
-def index():
-    return app.send_static_file('index.html')
+# --- 1. Flask-Login Setup ---
+login_manager = LoginManager()
+login_manager.init_app(app)
 
-# Catch-all route for SPA (Svelte Router)
+class User(UserMixin):
+    def __init__(self, userid, user_type):
+        self.id = userid       # Maps to 'userid' in your table
+        self.user_type = user_type # Maps to 'type' in your table
+        
+
+@login_manager.user_loader
+def load_user(user_id):
+    con = get_db_connection()
+    try:
+        with con.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("SELECT userid, type FROM users WHERE userid = %s", (user_id,))
+            user_data = cursor.fetchone()
+            if user_data:
+                return User(userid=user_data['userid'], user_type=user_data['type'])
+            return None
+    finally:
+        con.close()
+
+# SPA configuration: serve index.html for all non-API routes
 @app.route('/<path:path>')
 def catch_all(path):
     if os.path.exists(os.path.join(app.static_folder, path)):
         return app.send_static_file(path)
     return app.send_static_file('index.html')
+
+
+
+#`--- page loader -----    
+@app.route('/')
+@login_required
+def index():
+    return "hello world"
+
+@app.route('/login')
+def login():
+    return app.send_static_file('login.html')
+
+@app.route('/logout')
+def logout():
+    logout_user()
+    return app.send_static_file('logout.html')
+
+#-----api -----
+
+@app.post('/api/v1/login')
+def login_api():
+    data = request.get_json()
+    username_input = data.get('userid')
+    password_input = data.get('password')
+
+    if not username_input or not password_input:
+        return jsonify({"error": "Missing credentials"}), 400
+
+    con = get_db_connection()
+    try:
+        with con.cursor(pymysql.cursors.DictCursor) as cursor:
+            # Simple check against your 'users' table
+            query = "SELECT userid, password, type FROM users WHERE userid = %s"
+            cursor.execute(query, (username_input,))
+            user_data = cursor.fetchone()
+
+            # Verify existence and password (raw string check as requested)
+            if user_data and user_data['password'] == password_input:
+                user_obj = User(userid=user_data['userid'], user_type=user_data['type'])
+                
+                # This function handles the creation of the session cookie
+                login_user(user_obj)
+                
+                return redirect(url_for('index'))
+            
+            return jsonify({"error": "Invalid userid or password"}), 401
+    finally:
+        con.close()
+
+@app.post('/api/v1/logout')
+@login_required
+def logout_api():
+    logout_user()
+    return jsonify({"message": "Logged out"}), 200
+
 
 @app.get('/api/v1/check_user/<userid>')
 def check_user(userid):
@@ -63,6 +139,7 @@ def add_user(userid):
 
         
 @app.get("/video/<ip>/<port>")
+@login_required
 def get_video(ip, port):
     body = request.get_json()
     redact = True
