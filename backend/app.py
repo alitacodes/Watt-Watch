@@ -1,10 +1,15 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from db import get_db_connection
+
+from ultralytics import YOLO
 
 import pymysql
 import logging
 import os
 from dotenv import load_dotenv
+import cv2
+from cam import connect_camera, redaction
+
 
 load_dotenv()
 
@@ -47,7 +52,46 @@ def add_user(userid):
     except pymysql.MySQLError as e:
         logging.error(f"Error adding user to database: {e}")
         return jsonify({"error": "Failed to add user"}), 500
+
         
+@app.get("/video/<ip>/<port>")
+def get_video(ip, port):
+    body = request.get_json()
+    redact = True
+    try:
+        if body['redact'] == False:
+            admin_list = con.query("SELECT userid FROM users WHERE type = 'admin'")
+            if admin_list is not None:
+                if body['username'] in admin_list:
+                    redact = False
+    except Exception as e:
+        print("Warning: Could not verify user for redaction. Defaulting to redaction ON.")
+    cap = connect_camera(f"http://{ip}:{port}/stream")
+    model_path = "/home/ankan/projects/frost/exp-3.pt"
+    model = YOLO(model_path).to('cuda')
+    def generate_frames():
+        while True:
+            success, frame = cap.read()
+            if not success:
+                break
+            results = model.predict(frame, conf=0.15, verbose=False, device='cuda', imgsz=320, iou=0.2)[0]
+            if redact:
+                for box_obj in results.boxes:
+                    cls_id = int(box_obj.cls[0])
+                    if cls_id == 1:
+                        redaction(frame, box_obj.xyxy[0].tolist(), cls_id, float(box_obj.conf[0]))
+            ret, buffer = cv2.imencode('.jpg', frame)
+            if not ret:
+                continue
+                
+            frame_bytes = buffer.tobytes()
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n'
+            )
+
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=True)

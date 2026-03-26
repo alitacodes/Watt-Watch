@@ -67,7 +67,8 @@ def start_camera_stream(host='0.0.0.0', port=5000):
 
 
 if __name__ == '__main__':
+    port = 5001
     ip = socket.gethostbyname(socket.gethostname())
-    print(f"[Camera] Streaming at http://{ip}:5000/stream")
-    print(f"[Camera] Preview at  http://{ip}:5000")
-    app.run(host='0.0.0.0', port=5000, threaded=True)
+    print(f"[Camera] Streaming at http://{ip}:{port}/stream")
+    print(f"[Camera] Preview at  http://{ip}:{port}")
+    app.run(host='0.0.0.0', port=port, threaded=True)
