@@ -1,105 +1,84 @@
-import socketio
+# server_reader.py
+# Run this on your server PC
+# pip install opencv-python requests
+# Replace IP below with what camera_streamer.py prints on startup
+
 import cv2
-import numpy as np
-import base64
-import os
 import time
-import importlib.util
-import queue
+import os
+from ultralytics import YOLO
 
-sio = socketio.Client(reconnection=True, logger=False, engineio_logger=False)
+# Fedora/Wayland Fixes
+os.environ["QT_QPA_PLATFORM"] = "xcb"
+os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
 
-frame_queue = queue.Queue(maxsize=2)
-running = True
+CAMERA_URL = "http://192.168.0.110:5000/stream"  # ← paste IP from streamer output
 
-@sio.on('frame')
-def receive_frame(data):
-    if not data:
-        return
+CLASS_NAMES = {0: "person", 1: "face"}
+COLORS = {0: (256, 56, 56), 1: (10, 249, 72)}
 
-    if isinstance(data, (bytes, bytearray)):
-        img = bytes(data)
-    elif isinstance(data, str):
-        try:
-            img = base64.b64decode(data, validate=True)
-        except Exception:
-            print("Warning: received invalid base64 frame payload")
-            return
-    else:
-        print(f"Warning: unexpected frame payload type: {type(data)}")
-        return
+def draw_detection(frame, box, class_id: int, conf: float):
+    x1, y1, x2, y2 = map(int, box)
+    color = COLORS.get(class_id, (255, 255, 255))
+    label = CLASS_NAMES.get(class_id, str(class_id))
+    caption = f"{label} {conf:.2f}"
+    
+    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+    (tw, th), baseline = cv2.getTextSize(caption, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    cv2.rectangle(frame, (x1, y1 - th - 10), (x1 + tw, y1), color, -1)
+    cv2.putText(frame, caption, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-    np_arr = np.frombuffer(img, np.uint8)
-    frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    if frame is None or frame.size == 0:
-        print("Warning: failed to decode incoming frame")
-        return
+def connect_camera(url, retries=5):
+    """Keeps retrying until camera stream is available."""
+    for i in range(retries):
+        cap = cv2.VideoCapture(url)
+        if cap.isOpened():
+            print(f"[Server] Connected to camera stream")
+            return cap
+        print(f"[Server] Attempt {i+1} failed, retrying...")
+        time.sleep(2)
+    raise ConnectionError("Could not connect to camera")
 
-    # Put frame in queue. If queue is full, remove the oldest unread frame to avoid lag latency.
-    try:
-        if frame_queue.full():
-            frame_queue.get_nowait()
-        frame_queue.put_nowait(frame)
-    except queue.Empty:
-        pass
-    except queue.Full:
-        pass
+# Load YOLO model
+model_path = "/home/ankan/projects/frost/exp-3.pt"
+model = YOLO(model_path).to('cuda')
+device_name = model.device.type.upper()
 
+cap = connect_camera(CAMERA_URL)
 
-@sio.on('disconnect')
-def on_disconnect():
-    global running
-    running = False
-    print("Disconnected from server.")
+prev_time = time.time()
 
+while True:
+    ret, frame = cap.read()
 
-@sio.on('connect')
-def on_connect():
-    print("Connected to stream server")
+    if not ret:
+        print("[Server] Frame drop — reconnecting...")
+        cap.release()
+        cap = connect_camera(CAMERA_URL)
+        continue
 
+    # ── Hand off to your AI model ──────────────────────────
+    results = model.predict(frame, conf=0.25, verbose=False, device='cuda', imgsz=320)[0]
+    
+    for box_obj in results.boxes:
+        cls_id = int(box_obj.cls[0])
+        if cls_id in CLASS_NAMES:
+            draw_detection(frame, box_obj.xyxy[0].tolist(), cls_id, float(box_obj.conf[0]))
+    
+    # Performance Metrics
+    curr_time = time.time()
+    fps = 1 / (curr_time - prev_time)
+    prev_time = curr_time
+    
+    # UI Overlay
+    cv2.putText(frame, f"FPS: {fps:.1f} | Device: {device_name}", (10, 30), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    # ──────────────────────────────────────────────────────
 
-@sio.on('connect_error')
-def on_connect_error(data):
-    print(f"Connect error: {data}")
-
-
-server_url = os.getenv('STREAM_SERVER_URL', 'http://127.0.0.1:5000')
-has_websocket_client = importlib.util.find_spec('websocket') is not None
-transports = ['websocket', 'polling'] if has_websocket_client else ['polling']
-print(f"Connecting to {server_url} using transports={transports}")
-
-last_error = None
-for attempt in range(1, 6):
-    try:
-        sio.connect(server_url, transports=transports, wait_timeout=10)
+    # Dev preview — remove in production
+    cv2.imshow("Server view (YOLO Inference)", frame)
+    if cv2.waitKey(1) == ord('q'):
         break
-    except Exception as exc:
-        last_error = exc
-        print(f"Connection attempt {attempt}/5 failed: {exc}")
-        time.sleep(1)
-else:
-    raise SystemExit(
-        f"Unable to connect to {server_url}. "
-        "Ensure server is running and STREAM_SERVER_URL is correct. "
-        f"Last error: {last_error}"
-    )
 
-try:
-    while running:
-        frame_to_show = None
-        try:
-            # Safely grab the newest frame from the queue (non-blocking)
-            frame_to_show = frame_queue.get_nowait()
-        except queue.Empty:
-            pass
-
-        if frame_to_show is not None:
-            cv2.imshow("Stream", frame_to_show)
-
-        # 30ms wait provides ~33 FPS GUI refresh rate
-        if cv2.waitKey(30) == 27:  # ESC key
-            break
-finally:
-    running = False
-    sio.disconnect()
-    cv2.destroyAllWindows()
+cap.release()
+cv2.destroyAllWindows()
