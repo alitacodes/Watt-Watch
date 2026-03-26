@@ -1,14 +1,9 @@
-# server_reader.py
-# Run this on your server PC
-# pip install opencv-python requests
-# Replace IP below with what camera_streamer.py prints on startup
 
 import cv2
 import time
 import os
 from ultralytics import YOLO
 
-# Fedora/Wayland Fixes
 os.environ["QT_QPA_PLATFORM"] = "xcb"
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
 
