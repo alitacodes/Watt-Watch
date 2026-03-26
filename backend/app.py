@@ -9,6 +9,7 @@ import logging
 import os
 from dotenv import load_dotenv
 import cv2
+from functools import wraps
 from cam import connect_camera, redaction
 
 
@@ -28,6 +29,20 @@ app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "super-secret-change-me")
 # --- 1. Flask-Login Setup ---
 login_manager = LoginManager()
 login_manager.init_app(app)
+# ---- Role-Based Access Control Decorator ----
+def require_role(*allowed_roles):
+    """Decorator to check if user has one of the allowed roles"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return jsonify({"error": "Unauthorized"}), 401
+            if current_user.user_type not in allowed_roles:
+                return jsonify({"error": "Forbidden - insufficient permissions"}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
 
 class User(UserMixin):
     def __init__(self, userid, user_type):
@@ -63,6 +78,7 @@ def login():
 
 @app.route('/dashboard')
 @login_required
+@require_role('admin', 'mod')
 def dashboard():
     return app.send_static_file('index.html')
 
@@ -144,6 +160,43 @@ def check_user(userid):
         return {"exists": False}
     return {"exists": True}
 
+# ---- Admin-Only Endpoints ----
+@app.get('/api/v1/users')
+@login_required
+@require_role('admin')
+def get_all_users():
+    """Admin only: Get list of all users"""
+    try:
+        with con.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("SELECT userid, type FROM users")
+            users = cursor.fetchall()
+        return jsonify({"users": users}), 200
+    except pymysql.MySQLError as e:
+        logging.error(f"Error fetching users: {e}")
+        return jsonify({"error": "Failed to fetch users"}), 500
+
+@app.post('/api/v1/delete_user/<userid>')
+@login_required
+@require_role('admin')
+def delete_user(userid):
+    """Admin only: Delete a user"""
+    try:
+        with con.cursor() as cursor:
+            cursor.execute("DELETE FROM users WHERE userid = %s", (userid,))
+        con.commit()
+        return jsonify({"message": "User deleted successfully"}), 200
+    except pymysql.MySQLError as e:
+        logging.error(f"Error deleting user: {e}")
+        return jsonify({"error": "Failed to delete user"}), 500
+
+# ---- Mod-Only Endpoints ----
+@app.get('/api/v1/recent_activity')
+@login_required
+@require_role('admin', 'mod')
+def recent_activity():
+    """Admin & Mod only: Get recent activity logs"""
+    return jsonify({"activity": "Recent activity data"}), 200
+
 @app.post('/api/v1/add_user/<userid>')
 def add_user(userid):
     request_data = request.get_json()
@@ -160,9 +213,9 @@ def add_user(userid):
         return jsonify({"error": "Failed to add user"}), 500
 
         
-@app.get("/video/<ip>/<port>/<redact_state>")
+@app.get("/video/<ip>/<port>/")
 @login_required
-def get_video(ip, port, redact_state):
+def get_video(ip, port, ):
     # For GET requests (e.g. from <img src="...">), body is usually empty. We should use query args or handle missing JSON gracefully.
     body = request.get_json(silent=True) or {}
     
@@ -170,24 +223,7 @@ def get_video(ip, port, redact_state):
     wants_unredacted = request.args.get('redact', 'true').lower() == 'false' or body.get('redact') == False
     
     # Always default to True until we positively verify they have admin rights
-    redact = True 
     
-    if wants_unredacted:
-        try:
-            with con.cursor(pymysql.cursors.DictCursor) as cursor:
-                cursor.execute("SELECT userid FROM users WHERE type = 'admin'")
-                admin_list = [row['userid'] for row in cursor.fetchall()]
-                
-            username = body.get('username') or current_user.id
-            
-            # Positively confirm the user is in the admin list before turning off redaction
-            if username in admin_list:
-                redact = False
-        except Exception as e:
-            print("Warning: Could not verify user for redaction. Defaulting to redaction ON.", getattr(e, 'message', str(e)))
-            redact = True
-    if redact_state in ("false",'0'):
-        redact = False
     cap = connect_camera(f"http://{ip}:{port}/stream")
     model_path = "/home/ankan/projects/Watt-Watch/ai/exp-3.pt"
     model = YOLO(model_path).to('cuda')
@@ -197,11 +233,34 @@ def get_video(ip, port, redact_state):
             if not success:
                 break
             results = model.predict(frame, conf=0.15, verbose=False, device='cuda', imgsz=320, iou=0.2)[0]
-            if redact:
-                for box_obj in results.boxes:
-                    cls_id = int(box_obj.cls[0])
-                    if cls_id == 1:
-                        redaction(frame, box_obj.xyxy[0].tolist(), cls_id, float(box_obj.conf[0]))
+            for box_obj in results.boxes:
+                cls_id = int(box_obj.cls[0])
+                if cls_id == 1:
+                    redaction(frame, box_obj.xyxy[0].tolist(), cls_id, float(box_obj.conf[0]))
+            ret, buffer = cv2.imencode('.jpg', frame)
+            if not ret:
+                continue
+                
+            frame_bytes = buffer.tobytes()
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n'
+            )
+
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.get("/video/<ip>/<port>/admin")
+@login_required
+@require_role('admin')
+def get_video_admin(ip, port):
+    cap = connect_camera(f"http://{ip}:{port}/stream")
+    model_path = "/home/ankan/projects/Watt-Watch/ai/exp-3.pt"
+    model = YOLO(model_path).to('cuda')
+    def generate_frames():
+        while True:
+            success, frame = cap.read()
+            if not success:
+                break
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 continue
