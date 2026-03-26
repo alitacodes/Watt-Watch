@@ -189,7 +189,7 @@ def get_video(ip, port, redact_state):
     if redact_state in ("false",'0'):
         redact = False
     cap = connect_camera(f"http://{ip}:{port}/stream")
-    model_path = "/home/ankan/projects/frost/exp-3.pt"
+    model_path = "/home/ankan/projects/Watt-Watch/ai/exp-3.pt"
     model = YOLO(model_path).to('cuda')
     def generate_frames():
         while True:
