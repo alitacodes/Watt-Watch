@@ -1,6 +1,4 @@
 <script>
-    import { push } from 'svelte-spa-router';
-
     let username = '';
     let password = '';
     let errorMessage = '';
@@ -18,9 +16,9 @@
                 body: JSON.stringify({ userid: username, password: password })
             });
 
-            // Since svelte-spa-router handles frontend routing
+            // Use vanilla window.location.href for clean URL navigation
             if (response.ok) {
-                push('/dashboard');
+                window.location.href = '/dashboard';
             } else {
                 const data = await response.json();
                 errorMessage = data.error || 'Login failed (Bad Credentials)';

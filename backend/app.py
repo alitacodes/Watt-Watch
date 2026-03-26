@@ -48,9 +48,38 @@ def load_user(user_id):
     finally:
         con.close()
 
+# ---- Dedicated Web Routes ----
+@app.route('/')
+def home():
+    if not current_user.is_authenticated:
+        return redirect(url_for('login'))
+    return app.send_static_file('index.html')
 
-# SPA configuration: serve index.html for all non-API routes
-@app.route('/', defaults={'path': ''})
+@app.route('/login')
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+    return app.send_static_file('index.html')
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    return app.send_static_file('index.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return app.send_static_file('index.html')
+
+# (You can easily add more dedicated routes like above)
+# e.g.:
+# @app.route('/settings')
+# @login_required
+# def settings():
+#     return app.send_static_file('index.html')
+
+# Catch-all to still serve CSS/JS (needed so Svelte can load its assets)
 @app.route('/<path:path>')
 def catch_all(path):
     if path.startswith('api/'):
@@ -97,7 +126,7 @@ def login_api():
     finally:
         con.close()
 
-@app.post('/api/v1/logout')
+@app.route('/api/v1/logout')
 @login_required
 def logout_api():
     logout_user()

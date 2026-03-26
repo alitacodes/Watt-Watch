@@ -1,17 +1,23 @@
 <script>
-    import Router from 'svelte-spa-router';
+    import Login from './routes/Login.svelte';
+    import Dashboard from './routes/Dashboard.svelte';
+    import Logout from './routes/Logout.svelte';
+
+    // Map paths to components
+    const routes = {
+        '/': Login,
+        '/login': Login,
+        '/dashboard': Dashboard,
+        '/logout': Logout,
+    };
+
+    // Get the current path from the browser's address bar
+    const path = window.location.pathname;
     
-    // Configurable routes passed into the app
-    export let routes = {};
+    // Pick which component to render based on the path
+    let page = routes[path] || Login;
 </script>
 
 <main>
-    <Router {routes} />
+    <svelte:component this={page} />
 </main>
-
-<style>
-    main {
-        font-family: sans-serif;
-        text-align: center;
-    }
-</style>
