@@ -5,3 +5,4 @@ __pycache__
 myenv.env
 .env
 backend/.env
+node_modules/

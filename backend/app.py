@@ -21,11 +21,18 @@ DB_NAME = os.getenv("DB_NAME")
 
 con = get_db_connection()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='../frontend/public', static_url_path='/')
 
 @app.route('/')
 def index():
-    return "Hello, World! This is the backend server for Watt Watch."
+    return app.send_static_file('index.html')
+
+# Catch-all route for SPA (Svelte Router)
+@app.route('/<path:path>')
+def catch_all(path):
+    if os.path.exists(os.path.join(app.static_folder, path)):
+        return app.send_static_file(path)
+    return app.send_static_file('index.html')
 
 @app.get('/api/v1/check_user/<userid>')
 def check_user(userid):
