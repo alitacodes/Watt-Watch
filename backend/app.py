@@ -48,31 +48,24 @@ def load_user(user_id):
     finally:
         con.close()
 
+
 # SPA configuration: serve index.html for all non-API routes
+@app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def catch_all(path):
-    if os.path.exists(os.path.join(app.static_folder, path)):
+    if path.startswith('api/'):
+        return jsonify({"error": "Not Found"}), 404
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         return app.send_static_file(path)
     return app.send_static_file('index.html')
 
-
-
-#`--- page loader -----    
-@app.route('/')
-@login_required
-def index():
-    return "hello world"
-
-@app.route('/login')
-def login():
-    return app.send_static_file('login.html')
-
-@app.route('/logout')
-def logout():
-    logout_user()
-    return app.send_static_file('logout.html')
-
 #-----api -----
+
+@app.get('/api/v1/auth/status')
+def auth_status():
+    if current_user.is_authenticated:
+        return jsonify({"authenticated": True, "userid": current_user.id, "type": current_user.user_type}), 200
+    return jsonify({"authenticated": False}), 401
 
 @app.post('/api/v1/login')
 def login_api():
@@ -98,7 +91,7 @@ def login_api():
                 # This function handles the creation of the session cookie
                 login_user(user_obj)
                 
-                return redirect(url_for('index'))
+                return jsonify({"message": "Login successful", "userid": user_obj.id}), 200
             
             return jsonify({"error": "Invalid userid or password"}), 401
     finally:
@@ -138,19 +131,34 @@ def add_user(userid):
         return jsonify({"error": "Failed to add user"}), 500
 
         
-@app.get("/video/<ip>/<port>")
+@app.get("/video/<ip>/<port>/<redact_state>")
 @login_required
-def get_video(ip, port):
-    body = request.get_json()
-    redact = True
-    try:
-        if body['redact'] == False:
-            admin_list = con.query("SELECT userid FROM users WHERE type = 'admin'")
-            if admin_list is not None:
-                if body['username'] in admin_list:
-                    redact = False
-    except Exception as e:
-        print("Warning: Could not verify user for redaction. Defaulting to redaction ON.")
+def get_video(ip, port, redact_state):
+    # For GET requests (e.g. from <img src="...">), body is usually empty. We should use query args or handle missing JSON gracefully.
+    body = request.get_json(silent=True) or {}
+    
+    # Check if client is explicitly asking for redaction to be turned off. Default is true.
+    wants_unredacted = request.args.get('redact', 'true').lower() == 'false' or body.get('redact') == False
+    
+    # Always default to True until we positively verify they have admin rights
+    redact = True 
+    
+    if wants_unredacted:
+        try:
+            with con.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("SELECT userid FROM users WHERE type = 'admin'")
+                admin_list = [row['userid'] for row in cursor.fetchall()]
+                
+            username = body.get('username') or current_user.id
+            
+            # Positively confirm the user is in the admin list before turning off redaction
+            if username in admin_list:
+                redact = False
+        except Exception as e:
+            print("Warning: Could not verify user for redaction. Defaulting to redaction ON.", getattr(e, 'message', str(e)))
+            redact = True
+    if redact_state in ("false",'0'):
+        redact = False
     cap = connect_camera(f"http://{ip}:{port}/stream")
     model_path = "/home/ankan/projects/frost/exp-3.pt"
     model = YOLO(model_path).to('cuda')

@@ -3,12 +3,32 @@
 
     let username = '';
     let password = '';
+    let errorMessage = '';
 
-    function handleLogin(event) {
+    async function handleLogin(event) {
         event.preventDefault();
-        // In a real app, you would validate credentials here
-        console.log('Logging in with', username);
-        push('/dashboard');
+        errorMessage = '';
+        
+        try {
+            const response = await fetch('/api/v1/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ userid: username, password: password })
+            });
+
+            // Since svelte-spa-router handles frontend routing
+            if (response.ok) {
+                push('/dashboard');
+            } else {
+                const data = await response.json();
+                errorMessage = data.error || 'Login failed (Bad Credentials)';
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            errorMessage = 'A network error occurred.';
+        }
     }
 </script>
 
@@ -17,6 +37,10 @@
         <h1>Watt-Watch</h1>
         <p>Please log in to your account.</p>
         
+        {#if errorMessage}
+            <div class="error-message">{errorMessage}</div>
+        {/if}
+
         <form on:submit={handleLogin}>
             <div class="input-group">
                 <label for="username">Username</label>
@@ -68,6 +92,17 @@
         box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
         width: 100%;
         max-width: 380px;
+    }
+
+    .error-message {
+        background-color: rgba(255, 85, 85, 0.1);
+        color: #ff5555;
+        border: 1px solid #ff5555;
+        padding: 10px;
+        border-radius: 6px;
+        margin-bottom: 20px;
+        font-size: 14px;
+        text-align: left;
     }
 
     h1 {
