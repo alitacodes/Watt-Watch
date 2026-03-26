@@ -2,4 +2,6 @@
 test*
 __pycache__
 *.pyc
-myenv
+myenv.env
+.env
+backend/.env
