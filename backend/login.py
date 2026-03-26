@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from werkzeug.security import generate_password_hash, check_password_hash
+import hashlib                  # ✅ correct — werkzeug removed
 import jwt
 import datetime
 import os
@@ -11,13 +11,21 @@ CORS(app)  # Allow requests from React dev server
 # Secret key for JWT — use a strong random string in production
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "watt-watch-secret-change-in-prod")
 
+# ── MD5 helpers ───────────────────────────────────────────────────────────────
+# ✅ Added — these were missing, causing NameError crashes
+def md5_hash(password: str) -> str:
+    return hashlib.md5(password.encode()).hexdigest()
+
+def check_md5_hash(stored_hash: str, password: str) -> bool:
+    return stored_hash == md5_hash(password)
+
 # ---------------------------------------------------------------------------
 # In-memory user store (replace with a real database in production)
-# Passwords are stored as hashed values using werkzeug
+# Passwords are stored as MD5-hashed values using hashlib  ✅ comment fixed
 # ---------------------------------------------------------------------------
 USERS = {
-    "admin": generate_password_hash("admin123"),
-    "operator": generate_password_hash("operator123"),
+    "admin": md5_hash("admin123"),        # ✅ was generate_password_hash() — fixed
+    "operator": md5_hash("operator123"),  # ✅ was generate_password_hash() — fixed
 }
 
 
@@ -45,7 +53,7 @@ def login():
         return jsonify({"success": False, "message": "Invalid credentials. Access denied."}), 401
 
     # Verify password
-    if not check_password_hash(USERS[username], password):
+    if not check_md5_hash(USERS[username], password):  # ✅ function now exists — no longer crashes
         return jsonify({"success": False, "message": "Invalid credentials. Access denied."}), 401
 
     # Generate JWT token (expires in 8 hours)
