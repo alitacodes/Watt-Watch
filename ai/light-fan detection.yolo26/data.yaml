@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 4
+names: ['fan', 'fan_off', 'fan_on', 'light']
+
+roboflow:
+  workspace: subhams-workspace-j5cnp
+  project: subhams-workspace-j5cnp
+  version: dataset
+  license: Private
+  url: https://app.roboflow.com/subhams-workspace-j5cnp/subhams-workspace-j5cnp/dataset
