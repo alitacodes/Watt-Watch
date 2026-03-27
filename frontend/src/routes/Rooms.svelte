@@ -100,12 +100,17 @@
                             <div class="room-card-top">
                                 <div class="room-id-block">
                                     <span class="room-num">Room {room.room_id}</span>
-                                    <span
-                                        class="status-badge"
-                                        style="color:{statusColor(room.status)};background:{statusBg(room.status)}"
-                                    >
-                                        {room.status}
-                                    </span>
+                                    <div class="status-stack">
+                                        <span
+                                            class="status-badge"
+                                            style="color:{statusColor(room.status)};background:{statusBg(room.status)}"
+                                        >
+                                            {room.status}
+                                        </span>
+                                        {#if room.p_count > 0}
+                                            <span class="p-count-mini">👤 {room.p_count} <small>persons</small></span>
+                                        {/if}
+                                    </div>
                                 </div>
 
                                 <div class="room-meta">
@@ -131,8 +136,8 @@
                                     <div class="meta-divider"></div>
                                     <div class="meta-item">
                                         <span class="meta-label">Waste Detected</span>
-                                        <span class="meta-val meta-waste-{room.status === 'occupied' ? 'yes' : 'no'}">
-                                            {room.status === 'occupied' ? 'True' : 'False'}
+                                        <span class="meta-val meta-waste-{(room.status === 'empty' || room.status === 'vacant') && room.current_usage_kw > 0.02 ? 'yes' : 'no'}">
+                                            {(room.status === 'empty' || room.status === 'vacant') && room.current_usage_kw > 0.02 ? 'TRUE' : 'FALSE'}
                                         </span>
                                     </div>
                                 </div>
@@ -341,6 +346,18 @@
         white-space: nowrap;
     }
     .cam-indicator.cam-live { color: #50fa7b; }
+
+    .status-stack { display: flex; flex-direction: column; gap: 4px; }
+    .p-count-mini {
+        font-size: 0.65rem;
+        font-weight: 700;
+        color: #8be9fd;
+        background: rgba(139,233,253,0.06);
+        padding: 2px 6px;
+        border-radius: 4px;
+        width: fit-content;
+    }
+    .p-count-mini small { font-weight: 400; opacity: 0.7; }
 
     .btn-view-feed {
         display: inline-flex;

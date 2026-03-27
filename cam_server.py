@@ -9,7 +9,7 @@ from werkzeug.serving import make_server
 # CameraStream — one capture thread, all ports/clients share the same frame
 # ---------------------------------------------------------------------------
 class CameraStream:
-    def __init__(self, src=0, frame_rate=12, width=640, height=320, jpeg_quality=70):
+    def __init__(self, src=0, frame_rate=15, width=640, height=320, jpeg_quality=70):
         self.src          = src
         self.frame_rate   = frame_rate
         self.width        = width
@@ -82,7 +82,7 @@ class CameraStream:
 # ---------------------------------------------------------------------------
 # Shared broadcaster — one camera, opened exactly once
 # ---------------------------------------------------------------------------
-broadcaster = CameraStream(src=0, frame_rate=12, width=640, height=320)
+broadcaster = CameraStream(src=0, frame_rate=15, width=640, height=320)
 
 
 # ---------------------------------------------------------------------------

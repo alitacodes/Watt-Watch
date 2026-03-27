@@ -202,8 +202,17 @@
                     </div>
 
                     <div class="room-footer glass">
-                        <span class="footer-label">Current Feed</span>
-                        <span class="footer-val">{selectedRoom ? `Room ${selectedRoom.room_id}` : 'None'} {cameraConnected ? `· ${selectedRoom.ip}:${selectedRoom.port}` : '· No camera'}</span>
+                        <div class="footer-left">
+                            <span class="footer-label">Current Feed</span>
+                            <span class="footer-val">{selectedRoom ? `Room ${selectedRoom.room_id}` : 'None'} {cameraConnected ? `· ${selectedRoom.ip}:${selectedRoom.port}` : '· No camera'}</span>
+                        </div>
+                        {#if selectedRoom && selectedRoom.p_count >=0}
+                             <div class="footer-right">
+                                <span class="footer-occ-tag" class:is-occupied={selectedRoom.p_count > 0}>
+                                    {selectedRoom.p_count > 0 ? `👥 ${selectedRoom.p_count} OCCUPIED` : '🔘 EMPTY'}
+                                </span>
+                             </div>
+                        {/if}
                     </div>
                 </div>
 
@@ -227,6 +236,9 @@
                                 >
                                     <span class="room-id">Room {room.room_id}</span>
                                     <div class="room-right">
+                                        {#if room.p_count > 0}
+                                            <span class="p-count-badge">👤 {room.p_count}</span>
+                                        {/if}
                                         <span class="room-cam-badge" class:connected={room.ip && room.port}>
                                             {room.ip && room.port ? '● Live' : '○ No Cam'}
                                         </span>
@@ -473,10 +485,30 @@
 
     .room-footer {
         border-radius: 12px;
-        padding: 0.7rem 1rem;
+        padding: 0.7rem 1.2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
-    .footer-label { font-size: 0.75rem; color: #64748b; }
-    .footer-val   { font-size: 0.85rem; color: #e2e8f0; font-weight: 500; }
+    .footer-left { display: flex; flex-direction: column; gap: 2px; }
+    .footer-label { font-size: 0.7rem; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+    .footer-val   { font-size: 0.85rem; color: #e2e8f0; font-weight: 600; }
+
+    .footer-occ-tag {
+        font-size: 0.65rem;
+        font-weight: 800;
+        padding: 4px 10px;
+        border-radius: 6px;
+        background: rgba(148,163,184,0.1);
+        color: #94a3b8;
+        border: 1px solid rgba(148,163,184,0.15);
+        letter-spacing: 0.5px;
+    }
+    .footer-occ-tag.is-occupied {
+        background: rgba(80,250,123,0.08);
+        color: #50fa7b;
+        border-color: rgba(80,250,123,0.15);
+    }
 
 
     .right-col {
@@ -574,6 +606,16 @@
         letter-spacing: 0.3px;
     }
     .room-cam-badge.connected { color: #50fa7b; }
+    
+    .p-count-badge {
+        font-size: 0.75rem;
+        background: rgba(139,233,253,0.1);
+        color: #8be9fd;
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-weight: 600;
+        margin-right: 4px;
+    }
 
     /* ── No Camera placeholder ── */
     .no-camera {

@@ -178,13 +178,20 @@ try:
                 with con.cursor() as cursor:
                     cursor.execute(query, (room_id,))
                     con.commit()
+                query = "UPDATE status SET p_count = %s WHERE room_id = %s"
+                with con.cursor() as cursor:
+                    cursor.execute(query, (people, room_id))
+                    con.commit()
             elif (people == 0) and (room_status[room_id] == 'occupied'):
                 room_status[room_id] = 'empty'
                 query = "UPDATE status SET status = 'empty' WHERE room_id = %s"
                 with con.cursor() as cursor:
                     cursor.execute(query, (room_id,))
                     con.commit()
-                    
+                query = "UPDATE status SET p_count = %s WHERE room_id = %s"
+                with con.cursor() as cursor:
+                    cursor.execute(query, (people, room_id))
+                    con.commit()
                 
 
             # ---------- appliance state for this room ----------
@@ -303,6 +310,15 @@ except KeyboardInterrupt:
     print("\n[Server] Stopped by user.")
 
 finally:
+    # Reset all rooms in DB to 'empty' / 0 people so dashboard stays clean
+    try:
+        with con.cursor() as cursor:
+            cursor.execute("UPDATE status SET status = 'empty', p_count = 0")
+        con.commit()
+        print("[Server] Database status reset to 'empty' for all rooms.")
+    except Exception as e:
+        print(f"[ERROR] Could not reset database status: {e}")
+
     for cap in caps.values():
         cap.release()
     cv2.destroyAllWindows()

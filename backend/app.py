@@ -225,10 +225,10 @@ def get_rooms_list():
             cursor.execute("SELECT * FROM rooms")
             rooms = cursor.fetchall()
 
-            # Build a status lookup: room_id -> status
-            cursor.execute("SELECT room_id, status FROM status")
+            # Build a status lookup: room_id -> {status, p_count}
+            cursor.execute("SELECT room_id, status, p_count FROM status")
             status_rows = cursor.fetchall()
-            status_map = {r['room_id']: r['status'] for r in status_rows}
+            status_map = {r['room_id']: {"status": r['status'], "p_count": r.get('p_count', 0)} for r in status_rows}
 
             # Build current_usage_kw: sum of wattage per room / 1000
             cursor.execute("SELECT room_id, SUM(wattage) AS total_w FROM appliance GROUP BY room_id")
@@ -256,7 +256,9 @@ def get_rooms_list():
         for room in rooms:
             rid = room['id']
             room['room_id'] = rid
-            room['status'] = status_map.get(rid, 'unknown')
+            s_data = status_map.get(rid, {"status": "unknown", "p_count": 0})
+            room['status'] = s_data['status']
+            room['p_count'] = s_data['p_count']
             room['current_usage_kw'] = usage_map.get(rid, 0)
             room['daily_usage_kwh'] = round(daily_map.get(rid, 0), 3)
             room['monthly_usage_kwh'] = round(monthly_map.get(rid, 0), 3)
