@@ -8,6 +8,10 @@ from ultralytics import YOLO
 import pymysql
 from dotenv import load_dotenv
 
+from twilio.rest import Client
+
+
+
 load_dotenv()
 
 DB_HOST = os.getenv("DB_HOST")
@@ -15,6 +19,22 @@ DB_PORT = int(os.getenv("DB_PORT", 25060))
 DB_USER = os.getenv("DB_USER")
 DB_PASS = os.getenv("DB_PASS")
 DB_NAME = os.getenv("DB_NAME")
+TW_SID = os.getenv("TW_SID")
+TW_AUTH_TOKEN = os.getenv("TW_AUTH_TOKEN")
+
+def send_sms(body):
+    account_sid = TW_SID
+    auth_token = TW_AUTH_TOKEN
+    client = Client(account_sid, auth_token)
+    message = client.messages.create(
+    from_='+14788003912',
+    body=body,
+    to='+919330588689'
+    )
+    print(message.sid)
+
+
+
 def get_db_connection():
     """
     Creates and returns a secure connection to the DigitalOcean MySQL database.
@@ -182,6 +202,20 @@ try:
                     state["triggered"] = True
                     elapsed = round(now - state["time"], 1)
                     print(f"[TRIGGER]      {appliance} in Room {room_id} wasting for {elapsed}s — act now!")
+
+                    try:
+                        query = "INSERT INTO alerts (timestamp, room_id, info) VALUES (NOW(), %s, %s)"
+                        info  = f"Wastage found in empty room {room_id}"
+                        with con.cursor() as cursor:
+                            cursor.execute(query, (room_id, info))
+                        con.commit()
+                    except Exception as e:
+                        print(f"[DB ERROR] Failed to insert alert: {e}")
+
+                    try:
+                        send_sms(f"Wastage found in empty room {room_id}")
+                    except Exception as e:
+                        print(f"[SMS ERROR] Failed to send SMS: {e}")
                     # ── Put your action here ──────────────────────────────────
                     # e.g. requests.get(f"http://esp-ip/off?id={appliance}")
                     # ─────────────────────────────────────────────────────────
