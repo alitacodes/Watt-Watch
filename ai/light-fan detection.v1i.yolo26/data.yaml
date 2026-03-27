@@ -1,0 +1,13 @@
+train: ./train/images
+val: ./valid/images
+test: ./test/images
+
+nc: 4
+names: ['person', 'face','fan', 'light', ]
+
+roboflow:
+  workspace: rajan-lwxsv
+  project: light-fan-detection
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/rajan-lwxsv/light-fan-detection/dataset/1
