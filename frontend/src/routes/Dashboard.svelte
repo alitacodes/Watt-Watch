@@ -8,6 +8,8 @@
     let redacted = true;
     let timeStr = '';
     let clockInterval;
+    let pollInterval;
+    let isRefreshing = false;
 
     let stats = { totalRooms: 0, wasteKw: 0, totalKw: 0 };
     let rooms = [];
@@ -25,6 +27,31 @@
 
     function tick() {
         timeStr = new Date().toLocaleTimeString('en-US', { hour12: false });
+    }
+
+    async function fetchLiveData() {
+        try {
+            isRefreshing = true;
+            const [statsRes, roomsRes, alertsRes] = await Promise.all([
+                fetch('/api/v1/stats'),
+                fetch('/api/v1/room_list/'),
+                fetch('/api/v1/alerts'),
+            ]);
+            if (statsRes.ok)  stats = await statsRes.json();
+            if (roomsRes.ok) {
+                const data = await roomsRes.json();
+                rooms = data.rooms || [];
+                stats.totalRooms = rooms.length;
+
+                if (selectedRoom) {
+                    selectedRoom = rooms.find(r => String(r.room_id) === String(selectedRoom.room_id)) || selectedRoom;
+                }
+            }
+        } catch (e) {
+            console.error('Poll error', e);
+        } finally {
+            setTimeout(() => { isRefreshing = false; }, 1000);
+        }
     }
 
     onMount(async () => {
@@ -61,6 +88,7 @@
             if (alertsRes.ok) {
                 // alerts from API ignored — using dummy alerts for display
             }
+            pollInterval = setInterval(fetchLiveData, 5000);
         } catch (e) {
             console.error('Dashboard init error', e);
             errorMessage = 'Failed to connect to server';
@@ -69,7 +97,10 @@
         }
     });
 
-    onDestroy(() => clearInterval(clockInterval));
+    onDestroy(() => {
+        clearInterval(clockInterval);
+        clearInterval(pollInterval);
+    });
 
     function selectRoom(room) {
         selectedRoom = room;
@@ -108,6 +139,9 @@
                 </div>
                 <div class="header-right">
                     <div class="live-badge"><span class="dot-live"></span>System Live</div>
+                    {#if isRefreshing}
+                        <div style="font-size: 0.75rem; color: #50fa7b; margin-top: 6px; text-align: right; font-weight: 600;">🔄 Refreshing data...</div>
+                    {/if}
                 </div>
             </header>
 

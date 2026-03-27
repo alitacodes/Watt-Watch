@@ -1,10 +1,27 @@
 <script>
-    import { onMount } from 'svelte';
+    import { onMount, onDestroy } from 'svelte';
     import Sidebar from '../components/Sidebar.svelte';
 
     let currentUser = null;
     let rooms = [];
     let loading = true;
+    let pollInterval;
+    let isRefreshing = false;
+
+    async function fetchRoomsConfig() {
+        try {
+            isRefreshing = true;
+            const roomsRes = await fetch('/api/v1/rooms');
+            if (roomsRes.ok) {
+                const data = await roomsRes.json();
+                rooms = (data.rooms || []).map(r => ({ ...r }));
+            }
+        } catch (e) {
+            console.error('Poll error', e);
+        } finally {
+            setTimeout(() => { isRefreshing = false; }, 1000);
+        }
+    }
 
     onMount(async () => {
         try {
@@ -17,11 +34,16 @@
                 const data = await roomsRes.json();
                 rooms = (data.rooms || []).map(r => ({ ...r }));
             }
+            pollInterval = setInterval(fetchRoomsConfig, 5000);
         } catch (e) {
             console.error('Rooms init error', e);
         } finally {
             loading = false;
         }
+    });
+
+    onDestroy(() => {
+        clearInterval(pollInterval);
     });
 
     function statusColor(s = '') {
@@ -53,6 +75,9 @@
                 <div>
                     <h1>Room Details</h1>
                     <p class="subtitle">{rooms.length} rooms monitored — click a card to view usage</p>
+                    {#if isRefreshing}
+                        <p class="subtitle" style="color: #50fa7b; font-weight: bold; margin-top: 8px;">🔄 Refreshing data...</p>
+                    {/if}
                 </div>
                 <a href="/report" class="btn-report" id="btn-go-report">📄 Generate Report</a>
             </header>
