@@ -92,12 +92,15 @@ def logout():
     logout_user()
     return app.send_static_file('index.html')
 
-# (You can easily add more dedicated routes like above)
-# e.g.:
-# @app.route('/settings')
-# @login_required
-# def settings():
-#     return app.send_static_file('index.html')
+@app.route('/rooms')
+@login_required
+def rooms_page():
+    return app.send_static_file('index.html')
+
+@app.route('/report')
+@login_required
+def report_page():
+    return app.send_static_file('index.html')
 
 # Catch-all to still serve CSS/JS (needed so Svelte can load its assets)
 @app.route('/<path:path>')
@@ -162,7 +165,105 @@ def check_user(userid):
     if result is None:
         return {"exists": False}
     return {"exists": True}
+@app.get("/api/v1/stats")
+@login_required
+def get_stats():
+    con_local = get_db_connection()
+    try:
+        with con_local.cursor() as cursor:
+            # Total rooms
+            cursor.execute("SELECT COUNT(*) AS total FROM rooms")
+            total_rooms = cursor.fetchone()['total']
 
+            # Total waste kW today (sum of energy loss for today)
+            cursor.execute(
+                "SELECT COALESCE(SUM(loss), 0) AS total_waste FROM energy WHERE DATE(miniute) = CURDATE()"
+            )
+            waste_kw = float(cursor.fetchone()['total_waste'])
+
+            # Total kW: sum of wattage of all appliances / 1000
+            cursor.execute("SELECT COALESCE(SUM(wattage), 0) AS total_w FROM appliance")
+            total_kw = round(cursor.fetchone()['total_w'] / 1000, 2)
+
+        return jsonify({
+            "totalRooms": total_rooms,
+            "wasteKw": round(waste_kw, 2),
+            "totalKw": total_kw
+        })
+    finally:
+        con_local.close()
+
+
+@app.get("/api/v1/alerts")
+@login_required
+def get_alerts():
+    con_local = get_db_connection()
+    try:
+        with con_local.cursor() as cursor:
+            # Join status with rooms to get enriched alert info
+            cursor.execute("""
+                SELECT s.id, s.room_id, s.status,
+                       r.no_of_appl, r.zone_count
+                FROM status s
+                LEFT JOIN rooms r ON s.room_id = r.id
+                ORDER BY s.id DESC
+            """)
+            alerts = cursor.fetchall()
+        return jsonify({"alerts": alerts})
+    finally:
+        con_local.close()
+
+
+@app.get("/api/v1/rooms")
+@app.get("/api/v1/room_list/")
+@login_required
+def get_rooms_list():
+    con_local = get_db_connection()
+    try:
+        with con_local.cursor() as cursor:
+            # Fetch all rooms
+            cursor.execute("SELECT * FROM rooms")
+            rooms = cursor.fetchall()
+
+            # Build a status lookup: room_id -> status
+            cursor.execute("SELECT room_id, status FROM status")
+            status_rows = cursor.fetchall()
+            status_map = {r['room_id']: r['status'] for r in status_rows}
+
+            # Build current_usage_kw: sum of wattage per room / 1000
+            cursor.execute("SELECT room_id, SUM(wattage) AS total_w FROM appliance GROUP BY room_id")
+            usage_rows = cursor.fetchall()
+            usage_map = {r['room_id']: round(r['total_w'] / 1000, 2) for r in usage_rows}
+
+            # Daily energy loss per room
+            cursor.execute("""
+                SELECT room_id, COALESCE(SUM(loss), 0) AS daily_kwh
+                FROM energy
+                WHERE DATE(miniute) = CURDATE()
+                GROUP BY room_id
+            """)
+            daily_map = {r['room_id']: float(r['daily_kwh']) for r in cursor.fetchall()}
+
+            # Monthly energy loss per room
+            cursor.execute("""
+                SELECT room_id, COALESCE(SUM(loss), 0) AS monthly_kwh
+                FROM energy
+                WHERE YEAR(miniute) = YEAR(CURDATE()) AND MONTH(miniute) = MONTH(CURDATE())
+                GROUP BY room_id
+            """)
+            monthly_map = {r['room_id']: float(r['monthly_kwh']) for r in cursor.fetchall()}
+
+        for room in rooms:
+            rid = room['id']
+            room['room_id'] = rid
+            room['status'] = status_map.get(rid, 'unknown')
+            room['current_usage_kw'] = usage_map.get(rid, 0)
+            room['daily_usage_kwh'] = round(daily_map.get(rid, 0), 3)
+            room['monthly_usage_kwh'] = round(monthly_map.get(rid, 0), 3)
+
+        return jsonify({"rooms": rooms})
+    finally:
+        con_local.close()
 
 
 @app.get("/api/v1/room/<room_id>")
@@ -217,14 +318,16 @@ def add_room():
         no_of_appl = request_data['no_of_appl']
         zone_count = request_data['zone_count']
         appl = request_data['appl']
+        ip = request_data.get('ip', None)
+        port = int(request_data['port']) if request_data.get('port') is not None else None
     except Exception as e:
         return jsonify({"error": "invalid request"}), 400
 
     try:
         with con.cursor() as cursor:
             # Insert room and get the new room_id
-            query = "INSERT INTO rooms (no_of_appl, zone_count) VALUES (%s, %s)"
-            cursor.execute(query, (no_of_appl, zone_count))
+            query = "INSERT INTO rooms (no_of_appl, zone_count, ip, port) VALUES (%s, %s, %s, %s)"
+            cursor.execute(query, (no_of_appl, zone_count, ip, port))
             room_id = cursor.lastrowid
             
             # Insert each appliance belonging to this new room
@@ -241,12 +344,6 @@ def add_room():
 
 
 # ---- Mod-Only Endpoints ----
-@app.get('/api/v1/recent_activity')
-@login_required
-@require_role('admin', 'mod')
-def recent_activity():
-    """Admin & Mod only: Get recent activity logs"""
-    return jsonify({"activity": "Recent activity data"}), 200
 
 @app.post('/api/v1/add_user/<userid>')
 def add_user(userid):
@@ -263,16 +360,14 @@ def add_user(userid):
         logging.error(f"Error adding user to database: {e}")
         return jsonify({"error": "Failed to add user"}), 500
 
-        
+
 @app.get("/video/<ip>/<port>/")
 @login_required
-def get_video(ip, port, ):
-    body = request.get_json(silent=True) or {}
-    
-    wants_unredacted = request.args.get('redact', 'true').lower() == 'false' or body.get('redact') == False
-    
-    
-    cap = connect_camera(f"http://{ip}:{port}/stream")
+def get_video(ip, port):
+    try:
+        cap = connect_camera(f"http://{ip}:{port}/stream")
+    except ConnectionError:
+        return jsonify({"error": "Camera not connected"}), 503
     model = YOLO(model_path).to(device)
     def generate_frames():
         prev_time = time.time()

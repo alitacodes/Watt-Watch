@@ -5,18 +5,6 @@
     let currentUser = null;
     let rooms = [];
     let loading = true;
-    let selectedRoomIdx = null;
-
-    // Per-room expanded tab state: null | 'daily' | 'monthly'
-    function toggleTab(idx, tab) {
-        if (selectedRoomIdx === idx && rooms[idx]._tab === tab) {
-            rooms[idx]._tab = null;
-            selectedRoomIdx = null;
-        } else {
-            rooms = rooms.map((r, i) => ({ ...r, _tab: i === idx ? tab : null }));
-            selectedRoomIdx = idx;
-        }
-    }
 
     onMount(async () => {
         try {
@@ -27,7 +15,7 @@
             const roomsRes = await fetch('/api/v1/rooms');
             if (roomsRes.ok) {
                 const data = await roomsRes.json();
-                rooms = (data.rooms || []).map(r => ({ ...r, _tab: null }));
+                rooms = (data.rooms || []).map(r => ({ ...r }));
             }
         } catch (e) {
             console.error('Rooms init error', e);
@@ -82,7 +70,6 @@
                     {#each rooms as room, i}
                         <div
                             class="room-card glass"
-                            class:expanded={room._tab !== null}
                             id="room-card-{room.room_id}"
                         >
                             <div class="room-card-top">
@@ -98,128 +85,50 @@
 
                                 <div class="room-meta">
                                     <div class="meta-item">
-                                        <span class="meta-label">Current Load</span>
-                                        <span class="meta-val">{room.current_usage_kw ?? '—'} <small>kW</small></span>
+                                        <span class="meta-label">Daily Wastage</span>
+                                        <span class="meta-val">{room.daily_usage_kwh ?? '—'} <small>kWh</small></span>
                                     </div>
                                     <div class="meta-divider"></div>
                                     <div class="meta-item">
-                                        <span class="meta-label">Floor</span>
-                                        <span class="meta-val">{room.floor ?? '—'}</span>
+                                        <span class="meta-label">Monthly Wastage</span>
+                                        <span class="meta-val">{room.monthly_usage_kwh ?? '—'} <small>kWh</small></span>
+                                    </div>
+                                    <div class="meta-divider"></div>
+                                    <div class="meta-item">
+                                        <span class="meta-label">Total Appliances</span>
+                                        <span class="meta-val">{room.no_of_appl ?? '—'}</span>
+                                    </div>
+                                    <div class="meta-divider"></div>
+                                    <div class="meta-item">
+                                        <span class="meta-label">Running</span>
+                                        <span class="meta-val meta-running">6</span>
+                                    </div>
+                                    <div class="meta-divider"></div>
+                                    <div class="meta-item">
+                                        <span class="meta-label">Waste Detected</span>
+                                        <span class="meta-val meta-waste-{room.status === 'occupied' ? 'yes' : 'no'}">
+                                            {room.status === 'occupied' ? 'True' : 'False'}
+                                        </span>
                                     </div>
                                 </div>
 
-                                <div class="btn-group">
-                                    <button
-                                        class="tab-btn"
-                                        class:tab-active={room._tab === 'daily'}
-                                        on:click={() => toggleTab(i, 'daily')}
-                                        id="btn-daily-{room.room_id}"
+                                <div class="room-actions">
+                                    <span class="cam-indicator" class:cam-live={room.ip && room.port}>
+                                        {room.ip && room.port ? '● Camera Live' : '○ No Camera'}
+                                    </span>
+                                    <a
+                                        href="/dashboard?room={room.room_id}"
+                                        class="btn-view-feed"
+                                        id="btn-feed-{room.room_id}"
                                     >
-                                        📅 Daily
-                                    </button>
-                                    <button
-                                        class="tab-btn"
-                                        class:tab-active={room._tab === 'monthly'}
-                                        on:click={() => toggleTab(i, 'monthly')}
-                                        id="btn-monthly-{room.room_id}"
-                                    >
-                                        📆 Monthly
-                                    </button>
+                                        🎥 View Feed
+                                    </a>
                                 </div>
+
                             </div>
-
-                            {#if room._tab}
-                                <div class="usage-panel">
-                                    <div class="usage-header">
-                                        <span class="usage-title">
-                                            {room._tab === 'daily' ? 'Daily Usage' : 'Monthly Usage'}
-                                        </span>
-                                        <span class="usage-val">
-                                            {room._tab === 'daily'
-                                                ? (room.daily_usage_kwh ?? '—')
-                                                : (room.monthly_usage_kwh ?? '—')} kWh
-                                        </span>
-                                    </div>
-
-                                    <!-- Mini bar chart -->
-                                    <div class="mini-chart">
-                                        {#if room._tab === 'daily'}
-                                            {#each (room.daily_bars || [4,6,5,8,7,9,6]) as val, bi}
-                                                <div class="bar-col">
-                                                    <div
-                                                        class="bar"
-                                                        style="height:{(val/10)*100}%;background:linear-gradient(to top,#50fa7b,#8be9fd)"
-                                                    ></div>
-                                                    <span class="bar-label">{['M','T','W','T','F','S','S'][bi]}</span>
-                                                </div>
-                                            {/each}
-                                        {:else}
-                                            {#each (room.monthly_bars || [60,75,55,90,80,70,85,65,78,88,72,68]) as val, bi}
-                                                <div class="bar-col">
-                                                    <div
-                                                        class="bar"
-                                                        style="height:{(val/100)*100}%;background:linear-gradient(to top,#bd93f9,#ff79c6)"
-                                                    ></div>
-                                                    <span class="bar-label">{['J','F','M','A','M','J','J','A','S','O','N','D'][bi]}</span>
-                                                </div>
-                                            {/each}
-                                        {/if}
-                                    </div>
-                                </div>
-                            {/if}
                         </div>
                     {/each}
                 </div>
-
-                <!-- ── Right: Room List Sidebar ── -->
-                <aside class="room-list glass" id="rooms-list-sidebar">
-                    <h3>All Rooms</h3>
-                    <div class="list-scroll">
-                        {#each rooms as room}
-                            <div
-                                class="list-row"
-                                class:list-row-active={room._tab !== null}
-                            >
-                                <div class="list-left">
-                                    <span
-                                        class="list-dot"
-                                        style="background:{statusColor(room.status)};box-shadow:0 0 6px {statusColor(room.status)}"
-                                    ></span>
-                                    <span class="list-name">Room {room.room_id}</span>
-                                </div>
-                                <div class="list-right">
-                                    <span class="list-status">{room.status}</span>
-                                    <span class="list-kw">{room.current_usage_kw ?? '—'} kW</span>
-                                </div>
-                            </div>
-                        {/each}
-                        {#if rooms.length === 0}
-                            <p class="empty-hint">No rooms found.</p>
-                        {/if}
-                    </div>
-
-                    <!-- Summary -->
-                    <div class="list-summary">
-                        <div class="summary-item">
-                            <span class="s-label">Occupied</span>
-                            <span class="s-val" style="color:#50fa7b">
-                                {rooms.filter(r => r.status?.toLowerCase() === 'occupied').length}
-                            </span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="s-label">Active</span>
-                            <span class="s-val" style="color:#ffb86c">
-                                {rooms.filter(r => r.status?.toLowerCase() === 'active').length}
-                            </span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="s-label">Vacant</span>
-                            <span class="s-val" style="color:#6272a4">
-                                {rooms.filter(r => r.status?.toLowerCase() === 'vacant').length}
-                            </span>
-                        </div>
-                    </div>
-                </aside>
             </div>
         {/if}
     </div>
@@ -308,8 +217,8 @@
 
     /* ── Layout ── */
     .rooms-layout {
-        display: grid;
-        grid-template-columns: 1fr 280px;
+        display: flex;
+        flex-direction: column;
         gap: 1.5rem;
         flex: 1;
         min-height: 0;
@@ -356,11 +265,6 @@
         transition: border-color 0.3s, transform 0.2s;
     }
 
-    .room-card.expanded {
-        border-color: rgba(80,250,123,0.25);
-        transform: scale(1.005);
-    }
-
     .room-card-top {
         display: flex;
         align-items: center;
@@ -392,140 +296,46 @@
     .meta-label { font-size: 0.7rem; color: #64748b; }
     .meta-val { font-size: 1rem; font-weight: 600; color: #e2e8f0; }
     .meta-val small { font-size: 0.7rem; color: #94a3b8; }
+    .meta-running { color: #50fa7b; }
+    .meta-waste-yes { color: #ff5555; }
+    .meta-waste-no  { color: #50fa7b; }
     .meta-divider { width: 1px; height: 30px; background: rgba(255,255,255,0.06); }
 
-    .btn-group { display: flex; gap: 8px; margin-left: auto; }
+    .room-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-left: auto;
+    }
 
-    .tab-btn {
-        background: rgba(255,255,255,0.04);
-        color: #64748b;
-        border: 1px solid rgba(255,255,255,0.06);
+    .cam-indicator {
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: #475569;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
+    }
+    .cam-indicator.cam-live { color: #50fa7b; }
+
+    .btn-view-feed {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
         padding: 7px 14px;
         border-radius: 10px;
-        font-size: 0.8rem;
-        font-weight: 500;
-        cursor: pointer;
-        font-family: inherit;
-        transition: all 0.2s;
-    }
-
-    .tab-btn:hover { background: rgba(255,255,255,0.08); color: #e2e8f0; }
-
-    .tab-btn.tab-active {
-        background: rgba(80,250,123,0.12);
+        background: rgba(80,250,123,0.08);
         color: #50fa7b;
-        border-color: rgba(80,250,123,0.2);
+        border: 1px solid rgba(80,250,123,0.15);
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.2s;
+        font-family: inherit;
+        white-space: nowrap;
     }
-
-    /* ── Usage Panel ── */
-    .usage-panel {
-        background: rgba(255,255,255,0.02);
-        border-radius: 14px;
-        padding: 1rem 1.2rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        border: 1px solid rgba(255,255,255,0.04);
-        animation: fadeDown 0.2s ease;
+    .btn-view-feed:hover {
+        background: rgba(80,250,123,0.16);
+        border-color: rgba(80,250,123,0.3);
+        transform: translateY(-1px);
     }
-
-    @keyframes fadeDown { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
-
-    .usage-header { display: flex; justify-content: space-between; align-items: center; }
-    .usage-title { font-size: 0.85rem; color: #94a3b8; font-weight: 500; }
-    .usage-val { font-size: 1.4rem; font-weight: 700; color: #f8fafc; }
-
-    .mini-chart {
-        display: flex;
-        align-items: flex-end;
-        gap: 6px;
-        height: 80px;
-    }
-
-    .bar-col {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-        height: 100%;
-        justify-content: flex-end;
-    }
-
-    .bar {
-        width: 100%;
-        border-radius: 4px 4px 0 0;
-        transition: height 0.5s ease;
-        min-height: 4px;
-    }
-
-    .bar-label { font-size: 0.6rem; color: #475569; }
-
-    /* ── Room List Sidebar ── */
-    .room-list {
-        border-radius: 20px;
-        padding: 1.4rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        overflow: hidden;
-    }
-
-    .room-list h3 { margin: 0; font-size: 1rem; color: #fff; }
-
-    .list-scroll {
-        flex: 1;
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-    }
-
-    .list-scroll::-webkit-scrollbar { width: 3px; }
-    .list-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
-
-    .list-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px 10px;
-        border-radius: 10px;
-        transition: background 0.15s;
-        cursor: default;
-    }
-
-    .list-row:hover { background: rgba(255,255,255,0.03); }
-    .list-row.list-row-active { background: rgba(80,250,123,0.06); }
-
-    .list-left { display: flex; align-items: center; gap: 8px; }
-    .list-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-    .list-name { font-size: 0.85rem; color: #e2e8f0; }
-
-    .list-right { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
-    .list-status { font-size: 0.7rem; color: #64748b; }
-    .list-kw { font-size: 0.75rem; color: #94a3b8; font-weight: 500; }
-
-    .empty-hint { color: #475569; font-size: 0.85rem; text-align: center; padding: 2rem 0; }
-
-    /* ── Summary ── */
-    .list-summary {
-        display: flex;
-        gap: 0.5rem;
-        padding-top: 0.5rem;
-        border-top: 1px solid rgba(255,255,255,0.05);
-    }
-
-    .summary-item {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 2px;
-        background: rgba(255,255,255,0.02);
-        border-radius: 10px;
-        padding: 8px 4px;
-    }
-
-    .s-label { font-size: 0.65rem; color: #64748b; }
-    .s-val   { font-size: 1rem; font-weight: 700; }
 </style>
