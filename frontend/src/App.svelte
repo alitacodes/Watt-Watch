@@ -4,6 +4,7 @@
     import Rooms     from './routes/Rooms.svelte';
     import Report    from './routes/Report.svelte';
     import Logout    from './routes/Logout.svelte';
+    import CreateRoom from './routes/CreateRoom.svelte';
 
     const routes = {
         '/':          Login,
@@ -12,6 +13,7 @@
         '/rooms':     Rooms,
         '/report':    Report,
         '/logout':    Logout,
+        '/create-room': CreateRoom,
     };
 
     const path = window.location.pathname;

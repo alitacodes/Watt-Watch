@@ -79,7 +79,7 @@
                         <p class="subtitle" style="color: #50fa7b; font-weight: bold; margin-top: 8px;">🔄 Refreshing data...</p>
                     {/if}
                 </div>
-                <a href="/report" class="btn-report" id="btn-go-report">📄 Generate Report</a>
+                <a href="/create-room" class="btn-report" id="btn-go-create-room">➕ Create Room</a>
             </header>
 
             <div class="rooms-layout">
