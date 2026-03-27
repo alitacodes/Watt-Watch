@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response, redirect, url_for,  send_file
+from flask import Flask, request, jsonify, Response, redirect, url_for, send_file
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from db import get_db_connection
 
@@ -8,6 +8,9 @@ import torch
 import pymysql
 import logging
 import os
+import csv
+import io
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import cv2
 import time
@@ -286,6 +289,9 @@ def get_rooms_list():
             room['current_usage_kw'] = usage_map.get(rid, 0)
             room['daily_usage_kwh'] = round(daily_map.get(rid, 0), 3)
             room['monthly_usage_kwh'] = round(monthly_map.get(rid, 0), 3)
+            # Aliases for wastage-focused views
+            room['daily_wastage_kwh'] = room['daily_usage_kwh']
+            room['monthly_wastage_kwh'] = room['monthly_usage_kwh']
 
         return jsonify({"rooms": rooms})
     finally:
@@ -367,6 +373,87 @@ def add_room():
         con.rollback()
         logging.error(f"Error adding room: {e}")
         return jsonify({"error": "Database error"}), 500
+
+# ---- Report APIs ----
+
+@app.get("/api/v1/wastage/weekly")
+@login_required
+def weekly_wastage():
+    """Return daily total wastage (all rooms summed) for the last 7 days."""
+    con_local = get_db_connection()
+    try:
+        with con_local.cursor() as cursor:
+            cursor.execute("""
+                SELECT DATE(miniute) AS day, COALESCE(SUM(loss), 0) AS total_wh
+                FROM energy
+                WHERE DATE(miniute) >= CURDATE() - INTERVAL 6 DAY
+                GROUP BY DATE(miniute)
+                ORDER BY day ASC
+            """)
+            rows = cursor.fetchall()
+
+        # Build a full 7-day series (fill missing days with 0)
+        today = datetime.now().date()
+        day_map = {}
+        for r in rows:
+            day_map[r['day']] = round(float(r['total_wh']), 4)
+
+        result = []
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            result.append({
+                "date": d.isoformat(),
+                "label": d.strftime("%a"),   # Mon, Tue, ...
+                "wastage_wh": day_map.get(d, 0)
+            })
+
+        return jsonify({"weekly": result})
+    finally:
+        con_local.close()
+
+
+@app.get("/api/v1/wastage/csv/<int:room_id>")
+@login_required
+def download_room_csv(room_id):
+    """Download a CSV of daily wastage for a room over the last 30 days."""
+    con_local = get_db_connection()
+    try:
+        with con_local.cursor() as cursor:
+            cursor.execute("""
+                SELECT DATE(miniute) AS day, COALESCE(SUM(loss), 0) AS total_wh
+                FROM energy
+                WHERE room_id = %s AND DATE(miniute) >= CURDATE() - INTERVAL 29 DAY
+                GROUP BY DATE(miniute)
+                ORDER BY day ASC
+            """, (room_id,))
+            rows = cursor.fetchall()
+
+        # Build a full 30-day series
+        today = datetime.now().date()
+        day_map = {}
+        for r in rows:
+            day_map[r['day']] = round(float(r['total_wh']), 4)
+
+        output = io.StringIO()
+        # UTF-8 BOM so Excel opens the file correctly
+        output.write('\ufeff')
+        writer = csv.writer(output)
+        writer.writerow(["Date", "Wastage (Wh)"])
+        for i in range(29, -1, -1):
+            d = today - timedelta(days=i)
+            # Use DD/MM/YYYY format which Excel auto-sizes properly
+            writer.writerow([d.strftime("%d/%m/%Y"), day_map.get(d, 0)])
+
+        output.seek(0)
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': f'attachment; filename=room-{room_id}-wastage-report.csv'
+            }
+        )
+    finally:
+        con_local.close()
 
 
 # ---- Mod-Only Endpoints ----
@@ -463,8 +550,8 @@ def get_video_admin(ip, port):
 
 
 states = {
-    "1e0": 0, "1e1": 0, "1e6": 0, # Room 1
-    "2e2": 0, "2e4": 0, "2e5": 0  # Room 2
+    "1e1": 0, "1e2": 0, "1e6": 0, # Room 1
+    "2e3": 0, "2e4": 0, "2e5": 0  # Room 2
 }
 
 @app.route('/sync', methods=['POST'])

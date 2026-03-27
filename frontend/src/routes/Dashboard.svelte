@@ -99,16 +99,19 @@
         clearInterval(pollInterval);
     });
 
+    let streamKey = 0;
+
     function selectRoom(room) {
         selectedRoom = room;
-        redacted = true; // reset redact mode on room switch
+        redacted = true;
+        streamKey = Date.now(); // force stream reconnect
     }
 
     $: cameraConnected = selectedRoom && selectedRoom.ip && selectedRoom.port;
     $: videoSrc = cameraConnected
         ? (redacted
-            ? `http://127.0.0.1:5000/video/${selectedRoom.ip}/${selectedRoom.port}/`
-            : `http://127.0.0.1:5000/video/${selectedRoom.ip}/${selectedRoom.port}/admin`)
+            ? `http://127.0.0.1:5000/video/${selectedRoom.ip}/${selectedRoom.port}/?t=${streamKey}`
+            : `http://127.0.0.1:5000/video/${selectedRoom.ip}/${selectedRoom.port}/admin?t=${streamKey}`)
         : null;
 
     function statusColor(s = '') {
@@ -148,11 +151,13 @@
                     <strong class="stat-val">{stats.totalRooms}</strong>
                 </div>
                 <div class="stat-card glass" id="stat-waste">
-                    <span class="stat-label">Waste Detected</span>
-                    <strong class="stat-val warning">{stats.wasteKw} <small>kW</small></strong>
+                    <span class="stat-label">Today's Wastage</span>
+                    <strong class="stat-val warning">{stats.wasteKw} <small>Wh</small></strong>
                 </div>
-
-
+                <div class="stat-card glass" id="stat-total">
+                    <span class="stat-label">Total Capacity</span>
+                    <strong class="stat-val">{stats.totalKw} <small>kW</small></strong>
+                </div>
             </div>
 
             <div class="dashboard-grid">
@@ -177,6 +182,7 @@
 
                     <div class="video-wrap">
                         {#if cameraConnected}
+                            {#key streamKey}
                             <img
                                 id="cctv-feed"
                                 src={videoSrc}
@@ -185,6 +191,7 @@
                                 on:error={(e) => e.target.src =
                                     'https://placehold.co/640x360/090b10/50fa7b?text=Searching+for+Camera+Signal...'}
                             />
+                            {/key}
                         {:else}
                             <div class="no-camera">
                                 <span class="no-cam-icon">📷</span>

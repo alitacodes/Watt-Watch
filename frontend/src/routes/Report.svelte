@@ -7,7 +7,9 @@
     let loading = true;
     let searchQuery = '';
     let selectedRoom = null;
-    let graphMode = 'daily'; // 'daily' | 'monthly'
+
+    // Weekly wastage chart data
+    let weeklyData = [];
 
     $: filteredRooms = rooms.filter(r =>
         String(r.room_id).toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -24,10 +26,17 @@
             if (!authRes.ok) { window.location.href = '/login'; return; }
             currentUser = await authRes.json();
 
-            const roomsRes = await fetch('/api/v1/rooms');
+            const [roomsRes, weeklyRes] = await Promise.all([
+                fetch('/api/v1/rooms'),
+                fetch('/api/v1/wastage/weekly'),
+            ]);
             if (roomsRes.ok) {
                 const data = await roomsRes.json();
                 rooms = data.rooms || [];
+            }
+            if (weeklyRes.ok) {
+                const data = await weeklyRes.json();
+                weeklyData = data.weekly || [];
             }
         } catch (e) {
             console.error('Report init error', e);
@@ -48,46 +57,29 @@
         return '#ffb86c';
     }
 
-    // Build SVG polyline points from bar data
-    function buildPolyline(bars = [], width = 380, height = 120) {
-        if (!bars.length) return '';
-        const max = Math.max(...bars, 1);
-        return bars.map((v, i) => {
-            const x = (i / (bars.length - 1)) * width;
-            const y = height - (v / max) * (height - 10) - 5;
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
-        }).join(' ');
+    // Build SVG polyline + points from weekly data
+    function buildPolyline(data, width = 380, height = 120) {
+        if (!data.length) return { line: '', area: '', points: [] };
+        const vals = data.map(d => d.wastage_wh);
+        const max = Math.max(...vals, 0.001);
+        const pts = vals.map((v, i) => {
+            const x = data.length > 1 ? (i / (data.length - 1)) * width : width / 2;
+            const y = height - (v / max) * (height - 20) - 10;
+            return { x: +x.toFixed(1), y: +y.toFixed(1), val: v };
+        });
+        const line = pts.map(p => `${p.x},${p.y}`).join(' ');
+        const area = `0,${height} ${line} ${width},${height}`;
+        return { line, area, points: pts };
     }
+
+    $: chartData = buildPolyline(weeklyData);
+    $: chartLabels = weeklyData.map(d => d.label);
 
     function downloadCSV() {
         if (!selectedRoom) return;
-        const headers = ['Room ID', 'Status', 'Current kW', 'Daily kWh', 'Monthly kWh', 'Floor'];
-        const row = [
-            selectedRoom.room_id,
-            selectedRoom.status,
-            selectedRoom.current_usage_kw ?? '',
-            selectedRoom.daily_usage_kwh ?? '',
-            selectedRoom.monthly_usage_kwh ?? '',
-            selectedRoom.floor ?? '',
-        ];
-        const csv = [headers.join(','), row.join(',')].join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url;
-        a.download = `room-${selectedRoom.room_id}-report.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
+        // Trigger the backend CSV download endpoint
+        window.location.href = `/api/v1/wastage/csv/${selectedRoom.room_id}`;
     }
-
-    $: dailyBars   = selectedRoom?.daily_bars   || [4,6,5,8,7,9,6];
-    $: monthlyBars = selectedRoom?.monthly_bars || [60,75,55,90,80,70,85,65,78,88,72,68];
-    $: activeBars  = graphMode === 'daily' ? dailyBars : monthlyBars;
-    $: barLabels   = graphMode === 'daily'
-        ? ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
-        : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    $: polylineGreen = buildPolyline(dailyBars);
-    $: polylinePink  = buildPolyline(monthlyBars.map(v => v * 0.12));
 </script>
 
 <div class="page-wrapper">
@@ -103,7 +95,7 @@
             <header class="page-header">
                 <div>
                     <h1>Report Generator</h1>
-                    <p class="subtitle">Search a room and export its energy usage report</p>
+                    <p class="subtitle">Search a room and export its energy wastage report</p>
                 </div>
             </header>
 
@@ -163,16 +155,16 @@
                                     <span class="pm-val">{selectedRoom.current_usage_kw ?? '—'} <small>kW</small></span>
                                 </div>
                                 <div class="prev-metric">
-                                    <span class="pm-label">Daily Usage</span>
-                                    <span class="pm-val">{selectedRoom.daily_usage_kwh ?? '—'} <small>kWh</small></span>
+                                    <span class="pm-label">Daily Wastage</span>
+                                    <span class="pm-val">{selectedRoom.daily_wastage_kwh ?? selectedRoom.daily_usage_kwh ?? '—'} <small>kWh</small></span>
                                 </div>
                                 <div class="prev-metric">
-                                    <span class="pm-label">Monthly Usage</span>
-                                    <span class="pm-val">{selectedRoom.monthly_usage_kwh ?? '—'} <small>kWh</small></span>
+                                    <span class="pm-label">Monthly Wastage</span>
+                                    <span class="pm-val">{selectedRoom.monthly_wastage_kwh ?? selectedRoom.monthly_usage_kwh ?? '—'} <small>kWh</small></span>
                                 </div>
                                 <div class="prev-metric">
-                                    <span class="pm-label">Floor</span>
-                                    <span class="pm-val">{selectedRoom.floor ?? '—'}</span>
+                                    <span class="pm-label">Appliances</span>
+                                    <span class="pm-val">{selectedRoom.no_of_appl ?? '—'}</span>
                                 </div>
                             </div>
                         {:else}
@@ -183,96 +175,69 @@
                         {/if}
                     </div>
 
-                    <!-- Graph Card -->
+                    <!-- Wastage Graph Card -->
                     <div class="graph-card glass" id="graph-card">
                         <div class="graph-header">
-                            <h3>Usage Graph{selectedRoom ? ` — Room ${selectedRoom.room_id}` : ''}</h3>
-                            <div class="graph-tabs">
-                                <button
-                                    class="gtab"
-                                    class:gtab-active={graphMode === 'daily'}
-                                    on:click={() => graphMode = 'daily'}
-                                    id="btn-graph-daily"
-                                >Daily</button>
-                                <button
-                                    class="gtab"
-                                    class:gtab-active={graphMode === 'monthly'}
-                                    on:click={() => graphMode = 'monthly'}
-                                    id="btn-graph-monthly"
-                                >Monthly</button>
-                            </div>
+                            <h3>Wastage Graph — Last 7 Days (All Rooms)</h3>
                         </div>
 
                         <div class="svg-wrap">
-                            <svg viewBox="0 0 380 130" preserveAspectRatio="none">
-                                <!-- Grid lines -->
-                                {#each [0,1,2,3] as g}
-                                    <line
-                                        x1="0" y1="{10 + g*30}"
-                                        x2="380" y2="{10 + g*30}"
-                                        stroke="rgba(255,255,255,0.04)" stroke-width="1"
-                                    />
-                                {/each}
+                            {#if weeklyData.length > 0}
+                                <svg viewBox="0 0 380 130" preserveAspectRatio="none">
+                                    <!-- Grid lines -->
+                                    {#each [0,1,2,3] as g}
+                                        <line
+                                            x1="0" y1="{10 + g*30}"
+                                            x2="380" y2="{10 + g*30}"
+                                            stroke="rgba(255,255,255,0.04)" stroke-width="1"
+                                        />
+                                    {/each}
 
-                                <!-- Area fill (green) -->
-                                {#if graphMode === 'daily'}
+                                    <!-- Area fill -->
                                     <defs>
-                                        <linearGradient id="grad-green" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stop-color="#50fa7b" stop-opacity="0.3"/>
-                                            <stop offset="100%" stop-color="#50fa7b" stop-opacity="0"/>
+                                        <linearGradient id="grad-wastage" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stop-color="#ffb86c" stop-opacity="0.3"/>
+                                            <stop offset="100%" stop-color="#ffb86c" stop-opacity="0"/>
                                         </linearGradient>
                                     </defs>
                                     <polygon
-                                        points="0,125 {polylineGreen} 380,125"
-                                        fill="url(#grad-green)"
+                                        points={chartData.area}
+                                        fill="url(#grad-wastage)"
                                     />
                                     <polyline
-                                        points={polylineGreen}
+                                        points={chartData.line}
                                         fill="none"
-                                        stroke="#50fa7b"
+                                        stroke="#ffb86c"
                                         stroke-width="2"
                                         stroke-linecap="round"
                                         stroke-linejoin="round"
                                     />
-                                {:else}
-                                    <defs>
-                                        <linearGradient id="grad-pink" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stop-color="#ff79c6" stop-opacity="0.3"/>
-                                            <stop offset="100%" stop-color="#ff79c6" stop-opacity="0"/>
-                                        </linearGradient>
-                                    </defs>
-                                    <polygon
-                                        points="0,125 {polylinePink} 380,125"
-                                        fill="url(#grad-pink)"
-                                    />
-                                    <polyline
-                                        points={polylinePink}
-                                        fill="none"
-                                        stroke="#ff79c6"
-                                        stroke-width="2"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                    />
-                                {/if}
-                            </svg>
 
-                            <!-- X-axis labels -->
-                            <div class="x-labels">
-                                {#each barLabels as lbl}
-                                    <span>{lbl}</span>
-                                {/each}
-                            </div>
+                                    <!-- Data points -->
+                                    {#each chartData.points as pt}
+                                        <circle cx={pt.x} cy={pt.y} r="3.5" fill="#ffb86c" stroke="#090b10" stroke-width="1.5"/>
+                                    {/each}
+                                </svg>
+
+                                <!-- X-axis labels -->
+                                <div class="x-labels">
+                                    {#each chartLabels as lbl}
+                                        <span>{lbl}</span>
+                                    {/each}
+                                </div>
+                            {:else}
+                                <div class="no-data-chart">
+                                    <span>📊</span>
+                                    <p>No wastage data available for the past week</p>
+                                </div>
+                            {/if}
                         </div>
 
                         <!-- Legend -->
                         <div class="graph-legend">
                             <span class="legend-item">
-                                <span class="legend-dot" style="background:#50fa7b"></span>
-                                Daily kWh
-                            </span>
-                            <span class="legend-item">
-                                <span class="legend-dot" style="background:#ff79c6"></span>
-                                Monthly kWh
+                                <span class="legend-dot" style="background:#ffb86c"></span>
+                                Daily Wastage (Wh)
                             </span>
                         </div>
                     </div>
@@ -543,24 +508,6 @@
 
     .graph-header h3 { margin: 0; font-size: 1rem; color: #fff; }
 
-    .graph-tabs { display: flex; gap: 6px; }
-
-    .gtab {
-        background: rgba(255,255,255,0.04);
-        color: #64748b;
-        border: 1px solid rgba(255,255,255,0.06);
-        padding: 5px 14px;
-        border-radius: 8px;
-        font-size: 0.78rem;
-        font-weight: 500;
-        cursor: pointer;
-        font-family: inherit;
-        transition: all 0.2s;
-    }
-
-    .gtab:hover { color: #e2e8f0; }
-    .gtab.gtab-active { background: rgba(80,250,123,0.1); color: #50fa7b; border-color: rgba(80,250,123,0.2); }
-
     .svg-wrap {
         display: flex;
         flex-direction: column;
@@ -582,6 +529,18 @@
     }
 
     .x-labels span { font-size: 0.6rem; color: #475569; }
+
+    .no-data-chart {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 2rem;
+        color: #475569;
+        font-size: 0.85rem;
+    }
+    .no-data-chart span { font-size: 2rem; opacity: 0.4; }
 
     .graph-legend {
         display: flex;

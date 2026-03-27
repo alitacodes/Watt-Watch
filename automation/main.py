@@ -212,9 +212,33 @@ model      = YOLO(model_path).to(device)
 
 print(f"[Server] Model loaded on {model.device.type.upper()}")
 
-# Open camera captures once
-caps      = {room_id: cv2.VideoCapture(url) for room_id, url in ip_map.items()}
-prev_time = {room_id: time.time() for room_id in ip_map}
+# Open camera captures — skip cameras that fail to connect (5s timeout)
+caps = {}
+CAM_TIMEOUT = 5  # seconds
+
+def _try_open(room_id, url, result_dict):
+    """Try to open a camera in a thread so we can enforce a timeout."""
+    try:
+        cap = cv2.VideoCapture(url)
+        if cap.isOpened():
+            result_dict[room_id] = cap
+        else:
+            cap.release()
+    except Exception:
+        pass
+
+for room_id, url in ip_map.items():
+    result = {}
+    t = threading.Thread(target=_try_open, args=(room_id, url, result), daemon=True)
+    t.start()
+    t.join(timeout=CAM_TIMEOUT)
+    if room_id in result:
+        caps[room_id] = result[room_id]
+        print(f"[Server] Room {room_id} camera connected: {url}")
+    else:
+        print(f"[WARN] Room {room_id} camera timed out or failed — skipping: {url}")
+
+prev_time = {room_id: time.time() for room_id in caps}
 
 # Frame throttling state: room_id -> timestamp
 room_empty_since = {rid: None for rid in ip_map}
