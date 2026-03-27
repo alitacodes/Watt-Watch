@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response, redirect, url_for
+from flask import Flask, request, jsonify, Response, redirect, url_for,  send_file
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from db import get_db_connection
 
@@ -200,16 +200,40 @@ def get_alerts():
     con_local = get_db_connection()
     try:
         with con_local.cursor() as cursor:
-            # Join status with rooms to get enriched alert info
+            # Fetch alerts from the last 3 minutes
             cursor.execute("""
-                SELECT s.id, s.room_id, s.status,
-                       r.no_of_appl, r.zone_count
-                FROM status s
-                LEFT JOIN rooms r ON s.room_id = r.id
-                ORDER BY s.id DESC
+                SELECT id, timestamp, room_id, info
+                FROM alerts
+                WHERE timestamp >= NOW() - INTERVAL 3 MINUTE
+                ORDER BY timestamp DESC
             """)
             alerts = cursor.fetchall()
-        return jsonify({"alerts": alerts})
+            
+            # Format results for the frontend
+            formatted_alerts = []
+            for a in alerts:
+                msg = a['info'].lower()
+                status = "warning" # Default
+                
+                if "motion" in msg or "occupied" in msg:
+                    status = "occupied"
+                elif "empty" in msg or "cleared" in msg or "vacant" in msg:
+                    status = "vacant"
+                elif "wastage" in msg or "warning" in msg:
+                    status = "warning"
+                
+                # Format the time as HH:MM
+                time_str = a['timestamp'].strftime('%H:%M') if a['timestamp'] else "--:--"
+                
+                formatted_alerts.append({
+                    "id": a['id'],
+                    "room_id": a['room_id'],
+                    "status": status,
+                    "message": a['info'],
+                    "time": time_str
+                })
+                
+        return jsonify({"alerts": formatted_alerts})
     finally:
         con_local.close()
 
@@ -438,5 +462,28 @@ def get_video_admin(ip, port):
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
+states = {
+    "1e0": 0, "1e1": 0, "1e6": 0, # Room 1
+    "2e2": 0, "2e4": 0, "2e5": 0  # Room 2
+}
+
+@app.route('/sync', methods=['POST'])
+def sync():
+    # ESP32 pings this to get the current "Source of Truth"
+    return jsonify(states)
+
+# New URL Format to match your request: /<room>/<appliance>/<state>
+# Example: /2/e4/1 -> Key becomes "2e4"
+@app.route('/<room>/<appliance>/<int:state>')
+def update_state(room, appliance, state):
+    key = f"{room}{appliance}"
+    if key in states:
+        states[key] = state
+        print(f"[System] {key} is now {'ON' if state == 1 else 'OFF'}")
+        return jsonify({"status": "success", "device": key, "state": state})
+    return jsonify({"status": "error", "message": "Invalid mapping"}), 404
+
+
+
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)

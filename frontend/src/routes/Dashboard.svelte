@@ -15,15 +15,7 @@
     let rooms = [];
     let selectedRoom = null;
 
-    const dummyAlerts = [
-        { room_id: 1, status: 'occupied', message: 'Motion detected in Room 1', time: '18:14' },
-        { room_id: 2, status: 'vacant',   message: 'Room 2 left idle for 45 min', time: '17:52' },
-        { room_id: 3, status: 'warning',  message: 'High power draw in Room 3', time: '17:40' },
-        { room_id: 1, status: 'warning',  message: 'AC running in empty zone (Zone 2)', time: '17:31' },
-        { room_id: 4, status: 'occupied', message: 'Motion detected in Room 4', time: '17:10' },
-        { room_id: 2, status: 'warning',  message: 'Lights on — no occupancy detected', time: '16:58' },
-        { room_id: 3, status: 'vacant',   message: 'Room 3 cleared, devices still on', time: '16:44' },
-    ];
+    let alerts = [];
 
     function tick() {
         timeStr = new Date().toLocaleTimeString('en-US', { hour12: false });
@@ -46,6 +38,10 @@
                 if (selectedRoom) {
                     selectedRoom = rooms.find(r => String(r.room_id) === String(selectedRoom.room_id)) || selectedRoom;
                 }
+            }
+            if (alertsRes.ok) {
+                const data = await alertsRes.json();
+                alerts = data.alerts || [];
             }
         } catch (e) {
             console.error('Poll error', e);
@@ -86,7 +82,8 @@
                 }
             }
             if (alertsRes.ok) {
-                // alerts from API ignored — using dummy alerts for display
+                const data = await alertsRes.json();
+                alerts = data.alerts || [];
             }
             pollInterval = setInterval(fetchLiveData, 5000);
         } catch (e) {
@@ -253,7 +250,10 @@
                     <aside class="alerts-panel glass" id="alerts-panel">
                         <h3>⚡ Alerts</h3>
                         <div class="alerts-scroll">
-                            {#each dummyAlerts as alert}
+                            {#if alerts.length === 0}
+                                <p class="empty-hint">No recent alerts.</p>
+                            {/if}
+                            {#each alerts as alert}
                                 <div class="alert-row alert-{alert.status}">
                                     <div class="alert-left">
                                         <span class="alert-icon">
