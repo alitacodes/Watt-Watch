@@ -11,6 +11,7 @@ import os
 from dotenv import load_dotenv
 import cv2
 import time
+import datetime
 from functools import wraps
 from cam import connect_camera, redaction
 
@@ -100,6 +101,11 @@ def rooms_page():
 @app.route('/report')
 @login_required
 def report_page():
+    return app.send_static_file('index.html')
+
+@app.route('/create-room')
+@login_required
+def create_room_page():
     return app.send_static_file('index.html')
 
 # Catch-all to still serve CSS/JS (needed so Svelte can load its assets)
@@ -259,23 +265,48 @@ def get_rooms_list():
             usage_rows = cursor.fetchall()
             usage_map = {r['room_id']: round(r['total_w'] / 1000, 2) for r in usage_rows}
 
-            # Daily energy loss per room
+            # Daily energy bars (last 7 days, including today)
             cursor.execute("""
-                SELECT room_id, COALESCE(SUM(loss), 0) AS daily_kwh
+                SELECT room_id, DATE(miniute) as d, COALESCE(SUM(loss), 0) AS daily_kwh
                 FROM energy
-                WHERE DATE(miniute) = CURDATE()
-                GROUP BY room_id
+                WHERE miniute >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+                GROUP BY room_id, DATE(miniute)
             """)
-            daily_map = {r['room_id']: float(r['daily_kwh']) for r in cursor.fetchall()}
+            daily_bars_rows = cursor.fetchall()
 
-            # Monthly energy loss per room
+            # Monthly energy bars (last 12 months, including this month)
+            # Use DATE_FORMAT(CURDATE() ,'%Y-%m-01') to get start of current month exactly
             cursor.execute("""
-                SELECT room_id, COALESCE(SUM(loss), 0) AS monthly_kwh
+                SELECT room_id, YEAR(miniute) as y, MONTH(miniute) as m, COALESCE(SUM(loss), 0) AS monthly_kwh
                 FROM energy
-                WHERE YEAR(miniute) = YEAR(CURDATE()) AND MONTH(miniute) = MONTH(CURDATE())
-                GROUP BY room_id
+                WHERE miniute >= DATE_SUB(DATE_FORMAT(CURDATE() ,'%Y-%m-01'), INTERVAL 11 MONTH)
+                GROUP BY room_id, YEAR(miniute), MONTH(miniute)
             """)
-            monthly_map = {r['room_id']: float(r['monthly_kwh']) for r in cursor.fetchall()}
+            monthly_bars_rows = cursor.fetchall()
+            
+            today = datetime.date.today()
+            last_7_days = [(today - datetime.timedelta(days=i)) for i in range(6, -1, -1)]
+
+            last_12_months = []
+            for i in range(11, -1, -1):
+                m = today.month - i
+                y = today.year
+                if m <= 0:
+                    m += 12
+                    y -= 1
+                last_12_months.append((y, m))
+
+            daily_bars_map = {}
+            for r in daily_bars_rows:
+                rid = r['room_id']
+                if rid not in daily_bars_map: daily_bars_map[rid] = {}
+                daily_bars_map[rid][r['d']] = float(r['daily_kwh'])
+
+            monthly_bars_map = {}
+            for r in monthly_bars_rows:
+                rid = r['room_id']
+                if rid not in monthly_bars_map: monthly_bars_map[rid] = {}
+                monthly_bars_map[rid][(r['y'], r['m'])] = float(r['monthly_kwh'])
 
         for room in rooms:
             rid = room['id']
@@ -284,8 +315,15 @@ def get_rooms_list():
             room['status'] = s_data['status']
             room['p_count'] = s_data['p_count']
             room['current_usage_kw'] = usage_map.get(rid, 0)
-            room['daily_usage_kwh'] = round(daily_map.get(rid, 0), 3)
-            room['monthly_usage_kwh'] = round(monthly_map.get(rid, 0), 3)
+            
+            # Map bars for this room
+            room_d_bars = [daily_bars_map.get(rid, {}).get(d, 0.0) for d in last_7_days]
+            room_m_bars = [monthly_bars_map.get(rid, {}).get(ym, 0.0) for ym in last_12_months]
+            
+            room['daily_usage_kwh'] = round(room_d_bars[-1], 3)
+            room['monthly_usage_kwh'] = round(room_m_bars[-1], 3)
+            room['daily_bars'] = room_d_bars
+            room['monthly_bars'] = room_m_bars
 
         return jsonify({"rooms": rooms})
     finally:
