@@ -53,7 +53,25 @@ def load_esp_state():
 
 def check_appl(esp_state, room_id):
     """Return appliances belonging to this room."""
-    return {k: v for k, v in esp_state.items() if k[0] == str(room_id)}
+    return {k: v for k, v in esp_state.items() if k.split('e')[0] == str(room_id)}
+
+def get_energy_loss(app_id: int, duration_min: float) -> float | None:
+    """Query wattage for app_id, compute and return energy loss in Wh. Prints result."""
+    try:
+        with con.cursor() as cursor:
+            cursor.execute("SELECT wattage FROM appliance WHERE id = %s", (app_id,))
+            row = cursor.fetchone()
+        if not row:
+            print(f"[DB WARN] No appliance found for id={app_id}")
+            return None
+        wattage  = row["wattage"]               # W
+        loss_wh  = wattage * (duration_min / 60) # Wh
+        print(f"[ENERGY LOSS]  app_id={app_id}  wattage={wattage}W  "
+              f"duration={duration_min:.2f}min  loss={loss_wh:.4f}Wh")
+        return loss_wh
+    except Exception as e:
+        print(f"[DB ERROR] get_energy_loss: {e}")
+        return None
 
 # ---------------------------------------------------------------------------
 # WASTE TRACKING STATE  (keyed by appliance id e.g. "1e2")
@@ -190,16 +208,24 @@ try:
                     }
                     wastage.append(record)
                     print(f"[WASTE END]    {record}")
-
+                    try:
+                        app_id = int(appliance.split('e')[1])
+                        loss = get_energy_loss(app_id, record["duration_min"])
+                        if loss is not None:
+                            query = "INSERT INTO energy (room_id, app_id, loss) VALUES (%s, %s, %s)"
+                            with con.cursor() as cursor:
+                                cursor.execute(query, (room_id, app_id, round(loss, 4)))
+                            con.commit()
+                    except Exception as e:
+                        print(f"[WASTE END]    Error recording waste: {e}")
                     state["active"]    = False
                     state["time"]      = None
                     state["triggered"] = False
 
-            # ---------- FPS ----------
             fps                = 1.0 / max(now - prev_time[room_id], 1e-6)
             prev_time[room_id] = now
 
-            # ---------- draw bounding boxes ----------
+
             for box in result.boxes:
                 cls_id          = int(box.cls[0])
                 conf            = float(box.conf[0])
