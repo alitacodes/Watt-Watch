@@ -1,50 +1,43 @@
-from flask import Flask, jsonify
-import asyncio
-import json
-import websockets
-from flask_test_server import *
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-@app.route('/')
-def index():
-    return "Smart Home Server Active"
+# Initial State Registry for both rooms
+# Room 0: 3 appliances | Room 1: 4 appliances
+device_states = {
+    "0": {"e0": 0, "e1": 0, "e2": 0},
+    "1": {"e0": 0, "e1": 0, "e2": 0, "e3": 0}
+}
 
-# # URL format: /test/roomno/applno/state
-# @app.route("/test/<int:roomno>/<string:applno>/<int:state>")
-# def test_command(roomno, applno, state):
-#     # Get logic from server.py
-#     result = command(roomno, applno, state)
+# 1. Endpoint for ESP32 to fetch current targets (Polling)
+@app.route('/get_commands/<room_id>', methods=['GET'])
+def get_commands(room_id):
+    if room_id in device_states:
+        return jsonify(device_states[room_id]), 200
+    return jsonify({"error": "Room not found"}), 404
+
+# 2. Endpoint for ESP32 to report its actual status
+@app.route('/report_state', methods=['POST'])
+def report_state():
+    data = request.json
+    room = str(data.get("room"))
+    appl = data.get("appliance")
+    state = data.get("state")
     
-#     # If state needs to change, broadcast to the ESP32
-#     if result.get("send"):
-#         payload = {
-#             "action": result["action"],
-#             "room": result["room"],
-#             "appliance": result["appliance"],
-#             "state": result["state"]
-#         }
-        
-#         # Bridge Flask to the async WebSocket
-#         try:
-#             loop = asyncio.new_event_loop()
-#             asyncio.set_event_loop(loop)
-#             loop.run_until_complete(broadcast_command(payload))
-#             loop.close()
-#         except Exception as e:
-#             return jsonify({"error": str(e)}), 500
-    
-#     return jsonify({
-#         "message": result["status"], 
-#         "room": roomno, 
-#         "appliance": applno,
-#         "target_state": state
-#     })
+    if room in device_states and appl in device_states[room]:
+        print(f"Room {room} | {appl} confirmed state: {state}")
+        return jsonify({"status": "received"}), 200
+    return jsonify({"status": "error"}), 400
 
+# 3. User Control URL: http://<IP>:5000/control/1/e3/1
+@app.route('/control/<int:room>/<string:appl>/<int:state>')
+def control_pin(room, appl, state):
+    r_str = str(room)
+    if r_str in device_states and appl in device_states[r_str]:
+        device_states[r_str][appl] = state
+        return jsonify({"message": f"Command set: Room {room}, {appl} -> {state}"})
+    return jsonify({"message": "Invalid Room or Appliance"}), 404
 
-@app.route("/test")
-def test():
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0",debug=True, port=5000)
+if __name__ == '__main__':
+    # Use 0.0.0.0 so ESP32 can connect via your local IP
+    app.run(host='0.0.0.0', port=5000, debug=True)

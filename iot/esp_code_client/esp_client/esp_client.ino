@@ -5,7 +5,7 @@
 // --- FIX: DECLARE THESE AT THE TOP ---
 const char* ssid = "HP14fs";
 const char* password = "12345678";
-const char* server_host = "10.234.186.241"; 
+const char* server_host = "10.141.144.63"; 
 const uint16_t server_port = 8765;
 //
 
