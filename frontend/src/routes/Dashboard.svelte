@@ -2,335 +2,618 @@
     import { onMount } from 'svelte';
     
     let currentUser = null;
-    let users = [];
+
     let errorMessage = '';
     let loading = true;
 
+    // Mock Data for UI/UX demonstration
+    let wastageData = {
+        currentUsage: 0,
+        detectedWastage: 0,
+        savings: 0,
+        efficiency: 0
+    };
+
+
+
+    let redacted = true;
+
     onMount(async () => {
-        // Get current user info from auth status
-        const authRes = await fetch('/api/v1/auth/status');
-        if (authRes.ok) {
-            const data = await authRes.json();
-            currentUser = data;
-            console.log('Current user:', currentUser);
-        } else {
-            window.location.href = '/login';
-            return;
-        }
-
-        // If admin, fetch all users
-        if (currentUser.type === 'admin') {
-            const usersRes = await fetch('/api/v1/users');
-            if (usersRes.ok) {
-                const userData = await usersRes.json();
-                users = userData.users || [];
-            } else if (usersRes.status === 403) {
-                errorMessage = 'You do not have permission to view users';
+        try {
+            // Get current user info from auth status
+            const authRes = await fetch('/api/v1/auth/status');
+            if (authRes.ok) {
+                const data = await authRes.json();
+                currentUser = data;
+            } else {
+                window.location.href = '/login';
+                return;
             }
+
+
+        } catch (e) {
+            errorMessage = 'Failed to connect to server';
+        } finally {
+            loading = false;
         }
 
-        loading = false;
+        return () => {};
     });
 
     function handleLogout() {
         window.location.href = '/logout';
     }
 
-    async function deleteUser(userid) {
-        if (!confirm(`Are you sure you want to delete user ${userid}?`)) {
-            return;
-        }
 
-        const res = await fetch(`/api/v1/delete_user/${userid}`, {
-            method: 'POST'
-        });
-
-        if (res.ok) {
-            users = users.filter(u => u.userid !== userid);
-            alert('User deleted successfully');
-        } else {
-            const data = await res.json();
-            errorMessage = data.error || 'Failed to delete user';
-        }
-    }
 </script>
 
-<main class="dashboard-container">
-    <nav class="navbar">
-        <div class="nav-content">
-            <h1>Watt-Watch Dashboard</h1>
-            <div class="nav-right">
-                {#if currentUser}
-                    <span class="user-info">
-                        {currentUser.userid}
-                        <span class="badge" class:admin={currentUser.type === 'admin'} class:mod={currentUser.type === 'mod'}>
-                            {currentUser.type.toUpperCase()}
-                        </span>
-                    </span>
-                {/if}
-                <button on:click={handleLogout} class="logout-btn">Logout</button>
-            </div>
+<main class="dashboard-wrapper">
+    <nav class="sidebar">
+        <div class="logo">
+            <span class="bolt">⚡</span>
+            <h2>Watt-Watch</h2>
+        </div>
+        
+        <div class="nav-links">
+            <a href="#dashboard" class="active">
+                <i class="icon">📊</i> Dashboard
+            </a>
+            <a href="#monitoring">
+                <i class="icon">📹</i> Monitoring
+            </a>
+            <a href="#analytics">
+                <i class="icon">📈</i> Analytics
+            </a>
+
+            <button on:click={handleLogout} class="btn-nav-logout">
+                <i class="icon">🚪</i> Logout
+            </button>
+        </div>
+
+        <div class="user-profile">
+            {#if currentUser}
+                <div class="avatar">
+                    {currentUser.userid[0].toUpperCase()}
+                </div>
+                <div class="user-meta">
+                    <span class="username">{currentUser.userid}</span>
+                    <span class="role">{currentUser.type.toUpperCase()}</span>
+                </div>
+                <button on:click={handleLogout} title="Logout" class="btn-logout">🚪</button>
+            {/if}
         </div>
     </nav>
 
-    <div class="content">
+    <div class="main-content">
         {#if loading}
-            <div class="loading">Loading...</div>
-        {:else}
-            <div class="welcome">
-                <h2>Welcome, {currentUser?.userid}!</h2>
-                <p>User Type: <strong>{currentUser?.type}</strong></p>
+            <div class="loader-container">
+                <div class="loader"></div>
+                <p>Initializing Watt-Watch Systems...</p>
             </div>
-
-            {#if errorMessage}
-                <div class="error-message">{errorMessage}</div>
-            {/if}
-
-            <!-- Admin-Only Section -->
-            {#if currentUser?.type === 'admin'}
-                <section class="admin-section">
-                    <h3>Admin Panel</h3>
-                    <div class="users-list">
-                        <h4>All Users</h4>
-                        {#if users.length > 0}
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>User ID</th>
-                                        <th>Type</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {#each users as user}
-                                        <tr>
-                                            <td>{user.userid}</td>
-                                            <td>
-                                                <span class="badge" class:admin={user.type === 'admin'} class:mod={user.type === 'mod'}>
-                                                    {user.type.toUpperCase()}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                {#if user.userid !== currentUser.userid}
-                                                    <button on:click={() => deleteUser(user.userid)} class="delete-btn">Delete</button>
-                                                {/if}
-                                            </td>
-                                        </tr>
-                                    {/each}
-                                </tbody>
-                            </table>
-                        {:else}
-                            <p>No users found</p>
-                        {/if}
+        {:else}
+            <header>
+                <div class="header-info">
+                    <h1>Energy Intelligence Dashboard</h1>
+                    <p>Real-time surveillance and consumption tracking</p>
+                </div>
+                <div class="header-right">
+                    <div class="status-item">
+                        <span class="dot live"></span> System Live
                     </div>
-                </section>
-            {/if}
+                    <button on:click={handleLogout} class="btn-header-logout">
+                        Logout
+                    </button>
+                </div>
+            </header>
 
-            <!-- Mod & Admin Section -->
-            {#if currentUser?.type === 'admin' || currentUser?.type === 'mod'}
-                <section class="mod-section">
-                    <h3>Activity Dashboard</h3>
-                    <p>View and manage recent activities here.</p>
-                </section>
-            {/if}
+            <div class="grid-layout">
+                <!-- CCTV Monitor SECTION -->
+                <div class="card glass cctv-card">
+                    <div class="card-header">
+                        <h3>CCTV Live Stream</h3>
+                        <div class="cctv-actions">
+                            {#if currentUser?.type === 'admin'}
+                                <button 
+                                    class="btn-toggle-redact" 
+                                    on:click={() => redacted = !redacted}
+                                    class:is-raw={!redacted}
+                                >
+                                    {redacted ? "🔓 SHOW RAW" : "🔒 REDACT"}
+                                </button>
+                            {/if}
+                            <span class="badge live">REC</span>
+                        </div>
+                    </div>
+                    <div class="video-container">
+                        <!-- Connecting to the backend stream endpoint -->
+                        <img 
+                            src={redacted 
+                                ? "http://127.0.0.1:5000/video/127.0.0.1/5001/" 
+                                : "http://127.0.0.1:5000/video/127.0.0.1/5001/admin"} 
+                            alt="CCTV Feed" 
+                            class="cctv-feed"
+                            on:error={(e) => e.target.src = 'https://placehold.co/640x360/1a1d27/50fa7b?text=Searching+for+Camera+Signal...'}
+                        />
+                        <div class="stream-overlay">
+                            <span class="timestamp">{new Date().toLocaleTimeString()}</span>
+                            <span class="cam-label">CAM_01 - FRONT_DESK</span>
+                        </div>
+                    </div>
+                </div>
 
-            <!-- General Section -->
-            <section class="general-section">
-                <h3>General Information</h3>
-                <p>Your session is active. You can navigate through the application.</p>
-            </section>
+                <!-- ELECTRICITY WASTEAGE SECTION -->
+                <div class="card glass metrics-card">
+                    <div class="card-header">
+                        <h3>Electricity Usage</h3>
+                        <span class="badge usage">kW/h</span>
+                    </div>
+                    <div class="metrics-grid">
+                        <div class="metric-item">
+                            <span class="label">Current Load</span>
+                            <span class="value">{wastageData.currentUsage} <small>kW</small></span>
+                            <div class="progress-bg"><div class="progress-bar" style="width: 0%"></div></div>
+                        </div>
+                        <div class="metric-item highlight">
+                            <span class="label">Wastage Detected</span>
+                            <span class="value warning">{wastageData.detectedWastage} <small>kW</small></span>
+                            <span class="subtext">AI identified idle devices</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="label">Est. Savings</span>
+                            <span class="value success">${wastageData.savings}</span>
+                            <span class="subtext">Monthly projection</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="label">Efficiency Score</span>
+                            <span class="value">{wastageData.efficiency}%</span>
+                            <div class="efficiency-ring" style="--percent: {wastageData.efficiency}">
+                                <svg width="60" height="60">
+                                    <circle cx="30" cy="30" r="25"></circle>
+                                    <circle cx="30" cy="30" r="25" class="fg"></circle>
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+
+
+            </div>
         {/if}
     </div>
 </main>
 
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+
     :global(body) {
         margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        background-color: #0f111a;
-        color: white;
+        padding: 0;
+        font-family: 'Outfit', sans-serif;
+        background: #090b10;
+        color: #e2e8f0;
+        overflow: hidden;
     }
 
-    .dashboard-container {
+    .dashboard-wrapper {
+        display: flex;
+        height: 100vh;
+        width: 100vw;
+    }
+
+    /* Sidebar Styles */
+    .sidebar {
+        width: 260px;
+        background: rgba(15, 17, 26, 0.95);
+        border-right: 1px solid rgba(255, 255, 255, 0.05);
         display: flex;
         flex-direction: column;
-        height: 100vh;
+        padding: 2rem 1.5rem;
     }
 
-    .navbar {
-        background: #1a1d27;
-        border-bottom: 2px solid #50fa7b;
-        padding: 0;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    .logo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 3rem;
     }
 
-    .nav-content {
+    .bolt {
+        font-size: 1.5rem;
+        background: linear-gradient(135deg, #50fa7b, #8be9fd);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .logo h2 {
+        margin: 0;
+        font-size: 1.4rem;
+        letter-spacing: -1px;
+    }
+
+    .nav-links {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        flex: 1;
+    }
+
+    .nav-links a {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        text-decoration: none;
+        color: #94a3b8;
+        border-radius: 12px;
+        transition: all 0.3s ease;
+    }
+
+    .nav-links a:hover, .nav-links a.active {
+        background: rgba(80, 250, 123, 0.1);
+        color: #50fa7b;
+    }
+
+    .btn-nav-logout {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        background: transparent;
+        border: none;
+        color: #ff5555;
+        border-radius: 12px;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 1rem;
+        text-align: left;
+        transition: all 0.3s ease;
+        margin-top: auto;
+    }
+
+    .btn-nav-logout:hover {
+        background: rgba(255, 85, 85, 0.1);
+        transform: translateX(4px);
+    }
+
+    .user-profile {
+        margin-top: auto;
+        background: rgba(255, 255, 255, 0.03);
+        padding: 1rem;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .avatar {
+        width: 40px;
+        height: 40px;
+        background: linear-gradient(135deg, #bd93f9, #ff79c6);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+    }
+
+    .user-meta {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+    }
+
+    .username {
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    .role {
+        font-size: 0.7rem;
+        color: #94a3b8;
+    }
+
+    .btn-logout {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 1.2rem;
+        opacity: 0.6;
+        transition: opacity 0.3s;
+    }
+
+    .btn-logout:hover {
+        opacity: 1;
+    }
+
+    /* Main Content */
+    .main-content {
+        flex: 1;
+        padding: 2rem 3rem;
+        overflow-y: auto;
+        background: radial-gradient(circle at top right, rgba(80, 250, 123, 0.05), transparent);
+    }
+
+    header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 2.5rem;
+    }
+
+    header h1 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 700;
+        background: linear-gradient(to right, #fff, #94a3b8);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    header p {
+        margin: 0.5rem 0 0 0;
+        color: #94a3b8;
+    }
+
+    .header-right {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+    }
+
+    .status-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(80, 250, 123, 0.1);
+        color: #50fa7b;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .btn-header-logout {
+        background: rgba(255, 85, 85, 0.1);
+        color: #ff5555;
+        border: 1px solid rgba(255, 85, 85, 0.2);
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .btn-header-logout:hover {
+        background: #ff5555;
+        color: #fff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(255, 85, 85, 0.2);
+    }
+
+    .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+
+    .dot.live {
+        background: #50fa7b;
+        box-shadow: 0 0 10px #50fa7b;
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.5); opacity: 0.5; }
+        100% { transform: scale(1); opacity: 1; }
+    }
+
+    /* Grid Layout */
+    .grid-layout {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        grid-template-rows: auto auto;
+        gap: 1.5rem;
+    }
+
+    .card {
+        padding: 1.5rem;
+        border-radius: 24px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .glass {
+        background: rgba(26, 29, 39, 0.4);
+        backdrop-filter: blur(12px);
+    }
+
+    .card-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1.5rem 2rem;
-        max-width: 1400px;
-        margin: 0 auto;
-        width: 100%;
     }
 
-    .navbar h1 {
+    .card-header h3 {
         margin: 0;
-        color: #50fa7b;
-        font-size: 1.8rem;
+        font-size: 1.1rem;
+        color: #fff;
     }
 
-    .nav-right {
+    .cctv-actions {
         display: flex;
         align-items: center;
-        gap: 20px;
+        gap: 12px;
     }
 
-    .user-info {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 0.95rem;
+    .btn-toggle-redact {
+        background: rgba(139, 233, 253, 0.1);
+        color: #8be9fd;
+        border: 1px solid rgba(139, 233, 253, 0.2);
+        padding: 4px 12px;
+        border-radius: 8px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .btn-toggle-redact:hover {
+        background: #8be9fd;
+        color: #000;
+        transform: translateY(-1px);
+    }
+
+    .btn-toggle-redact.is-raw {
+        background: rgba(255, 184, 108, 0.1);
+        color: #ffb86c;
+        border-color: rgba(255, 184, 108, 0.2);
+    }
+
+    .btn-toggle-redact.is-raw:hover {
+        background: #ffb86c;
+        color: #000;
     }
 
     .badge {
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-weight: bold;
-    }
-
-    .badge.admin {
-        background-color: #ff5555;
-        color: white;
-    }
-
-    .badge.mod {
-        background-color: #ffaa00;
-        color: white;
-    }
-
-    .logout-btn {
-        background: #50fa7b;
-        color: #0f111a;
-        border: none;
-        padding: 8px 16px;
-        border-radius: 6px;
-        font-weight: bold;
-        cursor: pointer;
-        transition: opacity 0.2s;
-    }
-
-    .logout-btn:hover {
-        opacity: 0.8;
-    }
-
-    .content {
-        flex: 1;
-        padding: 2rem;
-        max-width: 1400px;
-        margin: 0 auto;
-        width: 100%;
-        overflow-y: auto;
-    }
-
-    .loading {
-        text-align: center;
-        padding: 2rem;
-        font-size: 1.2rem;
-    }
-
-    .welcome {
-        background: #1a1d27;
-        padding: 1.5rem;
+        padding: 4px 10px;
         border-radius: 8px;
-        margin-bottom: 2rem;
-        border-left: 4px solid #50fa7b;
+        font-size: 0.7rem;
+        font-weight: 800;
     }
 
-    .welcome h2 {
-        margin: 0 0 0.5rem 0;
+    .badge.live { background: #ff5555; color: #fff; }
+    .badge.usage { background: #bd93f9; color: #fff; }
+
+    /* CCTV Styles */
+    .video-container {
+        position: relative;
+        border-radius: 16px;
+        overflow: hidden;
+        aspect-ratio: 16/9;
+        background: #000;
     }
 
-    .welcome p {
-        margin: 0;
-        color: #a8a8b3;
+    .cctv-feed {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
     }
 
-    .error-message {
-        background-color: rgba(255, 85, 85, 0.1);
-        color: #ff5555;
-        border: 1px solid #ff5555;
+    .stream-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
         padding: 1rem;
-        border-radius: 6px;
-        margin-bottom: 1.5rem;
-    }
-
-    section {
-        background: #1a1d27;
-        padding: 1.5rem;
-        border-radius: 8px;
-        margin-bottom: 2rem;
-    }
-
-    section h3 {
-        margin-top: 0;
+        display: flex;
+        justify-content: space-between;
+        background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+        font-family: monospace;
+        font-size: 0.8rem;
         color: #50fa7b;
     }
 
-    .admin-section {
-        border-left: 4px solid #ff5555;
+    /* Metrics Styles */
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
     }
 
-    .mod-section {
-        border-left: 4px solid #ffaa00;
+    .metric-item {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
     }
 
-    .general-section {
-        border-left: 4px solid #50fa7b;
+    .metric-item .label {
+        font-size: 0.8rem;
+        color: #94a3b8;
     }
 
-    .users-list h4 {
-        margin-top: 0;
+    .metric-item .value {
+        font-size: 1.8rem;
+        font-weight: 700;
     }
 
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 1rem;
+    .value.warning { color: #ffb86c; }
+    .value.success { color: #50fa7b; }
+
+    .progress-bg {
+        height: 6px;
+        background: rgba(255,255,255,0.05);
+        border-radius: 3px;
     }
 
-    thead {
-        background: #333;
+    .progress-bar {
+        height: 100%;
+        background: #50fa7b;
+        border-radius: 3px;
     }
 
-    th, td {
-        padding: 0.75rem 1rem;
-        text-align: left;
-        border-bottom: 1px solid #333;
+    .subtext {
+        font-size: 0.7rem;
+        color: #64748b;
     }
 
-    th {
-        font-weight: bold;
-        color: #50fa7b;
+    /* Efficiency Ring */
+    .efficiency-ring {
+        position: relative;
+        width: 60px;
+        height: 60px;
     }
 
-    tbody tr:hover {
-        background: #222;
+    .efficiency-ring circle {
+        fill: none;
+        stroke: rgba(255,255,255,0.05);
+        stroke-width: 5;
     }
 
-    .delete-btn {
-        background: #ff5555;
-        color: white;
-        border: none;
-        padding: 6px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.85rem;
-        transition: opacity 0.2s;
+    .efficiency-ring .fg {
+        stroke: #50fa7b;
+        stroke-dasharray: 157;
+        stroke-dashoffset: calc(157 - (157 * var(--percent)) / 100);
+        stroke-linecap: round;
+        transition: stroke-dashoffset 1s ease-out;
     }
 
-    .delete-btn:hover {
-        opacity: 0.8;
+
+
+
+
+    /* Loader */
+    .loader-container {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+    }
+
+    .loader {
+        width: 48px;
+        height: 48px;
+        border: 3px solid rgba(80, 250, 123, 0.1);
+        border-radius: 50%;
+        border-top-color: #50fa7b;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Responsive */
+    @media (max-width: 1100px) {
+        .grid-layout { grid-template-columns: 1fr; }
     }
 </style>

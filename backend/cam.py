@@ -3,11 +3,12 @@ import cv2
 import time
 import os
 from ultralytics import YOLO
+import torch
 
-os.environ["QT_QPA_PLATFORM"] = "xcb"
-os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
+# os.environ["QT_QPA_PLATFORM"] = "xcb"
+# os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
 
-CAMERA_URL = "http://192.168.0.110:5000/stream"  # ← paste IP from streamer output
+CAMERA_URL = "http://192.168.0.110:5001/stream"  # ← paste IP from streamer output
 
 CLASS_NAMES = {0: "person", 1: "face"}
 COLORS = {0: (256, 56, 56), 1: (10, 249, 72)}
@@ -55,8 +56,9 @@ def connect_camera(url, retries=5):
 
 if __name__ == '__main__':
 # Load YOLO model
-    model_path = "/home/ankan/projects/frost/exp-3.pt"
-    model = YOLO(model_path).to('cuda')
+    model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../ai/exp-3.pt'))
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model = YOLO(model_path).to(device)
     device_name = model.device.type.upper()
 
     cap = connect_camera(CAMERA_URL)
@@ -72,7 +74,7 @@ if __name__ == '__main__':
             continue
 
         # ── Hand off to your AI model ──────────────────────────
-        results = model.predict(frame, conf=0.25, verbose=False, device='cuda', imgsz=320)[0]
+        results = model.predict(frame, conf=0.25, verbose=False, device=device, imgsz=320)[0]
         
         for box_obj in results.boxes:
             cls_id = int(box_obj.cls[0])

@@ -1,0 +1,10 @@
+websockets
+opencv-python
+flask
+flask-cors
+flask-login
+PyJWT
+pymysql
+python-dotenv
+ultralytics
+torch
