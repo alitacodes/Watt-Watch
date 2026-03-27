@@ -1,23 +1,21 @@
 <script>
-    import Login from './routes/Login.svelte';
+    import Login     from './routes/Login.svelte';
     import Dashboard from './routes/Dashboard.svelte';
-    import Logout from './routes/Logout.svelte';
+    import Rooms     from './routes/Rooms.svelte';
+    import Report    from './routes/Report.svelte';
+    import Logout    from './routes/Logout.svelte';
 
-    // Map paths to components
     const routes = {
-        '/': Login,
-        '/login': Login,
+        '/':          Login,
+        '/login':     Login,
         '/dashboard': Dashboard,
-        '/logout': Logout,
+        '/rooms':     Rooms,
+        '/report':    Report,
+        '/logout':    Logout,
     };
 
-    // Get the current path from the browser's address bar
     const path = window.location.pathname;
-    
-    // Pick which component to render based on the path
     let page = routes[path] || Login;
 </script>
 
-<main>
-    <svelte:component this={page} />
-</main>
+<svelte:component this={page} />
