@@ -4,8 +4,8 @@ app = Flask(__name__)
 
 # The Shared JSON using your exact new mapping
 states = {
-    "1e0": 0, "1e1": 0, "1e6": 0, # Room 1
-    "2e2": 0, "2e4": 0, "2e5": 0  # Room 2
+    "1e1": 0, "1e2": 0, "1e6": 0, # Room 1
+    "2e3": 0, "2e4": 0, "2e5": 0  # Room 2
 }
 
 @app.route('/sync', methods=['POST'])
