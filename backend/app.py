@@ -10,6 +10,7 @@ import logging
 import os
 from dotenv import load_dotenv
 import cv2
+import time
 from functools import wraps
 from cam import connect_camera, redaction
 
@@ -219,26 +220,35 @@ def add_user(userid):
 @app.get("/video/<ip>/<port>/")
 @login_required
 def get_video(ip, port, ):
-    # For GET requests (e.g. from <img src="...">), body is usually empty. We should use query args or handle missing JSON gracefully.
     body = request.get_json(silent=True) or {}
     
-    # Check if client is explicitly asking for redaction to be turned off. Default is true.
     wants_unredacted = request.args.get('redact', 'true').lower() == 'false' or body.get('redact') == False
     
-    # Always default to True until we positively verify they have admin rights
     
     cap = connect_camera(f"http://{ip}:{port}/stream")
     model = YOLO(model_path).to(device)
     def generate_frames():
+        prev_time = time.time()
         while True:
             success, frame = cap.read()
             if not success:
                 break
-            results = model.predict(frame, conf=0.15, verbose=False, device=device, imgsz=320, iou=0.2)[0]
+            results = model.predict(frame, conf=0.15, verbose=False, device='cuda', imgsz=320, iou=0.2)[0]
             for box_obj in results.boxes:
                 cls_id = int(box_obj.cls[0])
                 if cls_id == 1:
                     redaction(frame, box_obj.xyxy[0].tolist(), cls_id, float(box_obj.conf[0]))
+
+            # Calculate and draw FPS
+            curr_time = time.time()
+            fps = 1.0 / (curr_time - prev_time) if (curr_time - prev_time) > 0 else 0
+            prev_time = curr_time
+            cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            
+            # Remove the stray "# Calculate FPS" comment if it was there
+            # (In your current file it's at line 248)
+
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 continue
@@ -258,14 +268,23 @@ def get_video_admin(ip, port):
     cap = connect_camera(f"http://{ip}:{port}/stream")
 
     def generate_frames():
+        prev_time = time.time()
         while True:
             success, frame = cap.read()
             if not success:
                 break
+            
+            curr_time = time.time()
+            fps = 1.0 / (curr_time - prev_time) if (curr_time - prev_time) > 0 else 0
+            prev_time = curr_time
+
+            cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 continue
-                
+            
             frame_bytes = buffer.tobytes()
             yield (
                 b'--frame\r\n'

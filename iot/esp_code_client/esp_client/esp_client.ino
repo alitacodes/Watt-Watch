@@ -3,9 +3,9 @@
 #include <ArduinoJson.h>
 
 // --- FIX: DECLARE THESE AT THE TOP ---
-const char* ssid = "FrostHack AP_L4";
-const char* password = "AotL4@169#2026";
-const char* server_host = "192.168.0.144"; 
+const char* ssid = "HP14fs";
+const char* password = "12345678";
+const char* server_host = "10.234.186.241"; 
 const uint16_t server_port = 8765;
 //
 
