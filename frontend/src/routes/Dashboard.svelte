@@ -2,25 +2,19 @@
     import { onMount } from 'svelte';
     
     let currentUser = null;
-    let users = [];
+
     let errorMessage = '';
     let loading = true;
 
     // Mock Data for UI/UX demonstration
     let wastageData = {
-        currentUsage: 4.2,
-        detectedWastage: 0.8,
-        savings: 12.50,
-        efficiency: 82
+        currentUsage: 0,
+        detectedWastage: 0,
+        savings: 0,
+        efficiency: 0
     };
 
-    let aiDetails = {
-        model: 'YOLOv8s',
-        status: 'Active',
-        inferenceTime: '18ms',
-        detections: 2,
-        confidence: '94%'
-    };
+
 
     let redacted = true;
 
@@ -36,44 +30,21 @@
                 return;
             }
 
-            // If admin, fetch all users
-            if (currentUser.type === 'admin') {
-                const usersRes = await fetch('/api/v1/users');
-                if (usersRes.ok) {
-                    const userData = await usersRes.json();
-                    users = userData.users || [];
-                }
-            }
+
         } catch (e) {
             errorMessage = 'Failed to connect to server';
         } finally {
             loading = false;
         }
 
-        // Simulate some dynamic data updates for wastage
-        const interval = setInterval(() => {
-            wastageData.currentUsage = (4.0 + Math.random() * 0.5).toFixed(2);
-            wastageData.efficiency = Math.floor(80 + Math.random() * 5);
-        }, 3000);
-
-        return () => clearInterval(interval);
+        return () => {};
     });
 
     function handleLogout() {
         window.location.href = '/logout';
     }
 
-    async function deleteUser(userid) {
-        if (!confirm(`Are you sure you want to delete user ${userid}?`)) return;
 
-        const res = await fetch(`/api/v1/delete_user/${userid}`, { method: 'POST' });
-        if (res.ok) {
-            users = users.filter(u => u.userid !== userid);
-        } else {
-            const data = await res.json();
-            errorMessage = data.error || 'Failed to delete user';
-        }
-    }
 </script>
 
 <main class="dashboard-wrapper">
@@ -93,11 +64,10 @@
             <a href="#analytics">
                 <i class="icon">📈</i> Analytics
             </a>
-            {#if currentUser?.type === 'admin'}
-                <a href="#admin">
-                    <i class="icon">⚙️</i> Admin
-                </a>
-            {/if}
+
+            <button on:click={handleLogout} class="btn-nav-logout">
+                <i class="icon">🚪</i> Logout
+            </button>
         </div>
 
         <div class="user-profile">
@@ -126,10 +96,13 @@
                     <h1>Energy Intelligence Dashboard</h1>
                     <p>Real-time surveillance and consumption tracking</p>
                 </div>
-                <div class="status-indicators">
+                <div class="header-right">
                     <div class="status-item">
                         <span class="dot live"></span> System Live
                     </div>
+                    <button on:click={handleLogout} class="btn-header-logout">
+                        Logout
+                    </button>
                 </div>
             </header>
 
@@ -178,7 +151,7 @@
                         <div class="metric-item">
                             <span class="label">Current Load</span>
                             <span class="value">{wastageData.currentUsage} <small>kW</small></span>
-                            <div class="progress-bg"><div class="progress-bar" style="width: 65%"></div></div>
+                            <div class="progress-bg"><div class="progress-bar" style="width: 0%"></div></div>
                         </div>
                         <div class="metric-item highlight">
                             <span class="label">Wastage Detected</span>
@@ -203,78 +176,9 @@
                     </div>
                 </div>
 
-                <!-- AI CONTROLLER DETAILS SECTION -->
-                <div class="card glass ai-card">
-                    <div class="card-header">
-                        <h3>AI Controller Details</h3>
-                        <span class="badge ai">YOLOv8</span>
-                    </div>
-                    <div class="ai-stats">
-                        <div class="ai-stat">
-                            <span>Model Engine</span>
-                            <span>{aiDetails.model}</span>
-                        </div>
-                        <div class="ai-stat">
-                            <span>System Status</span>
-                            <span class="success">{aiDetails.status}</span>
-                        </div>
-                        <div class="ai-stat">
-                            <span>Inference Latency</span>
-                            <span>{aiDetails.inferenceTime}</span>
-                        </div>
-                        <div class="ai-stat">
-                            <span>Active Detections</span>
-                            <span class="pulse-text">{aiDetails.detections} Persons</span>
-                        </div>
-                        <div class="ai-stat">
-                            <span>Mean Confidence</span>
-                            <span>{aiDetails.confidence}</span>
-                        </div>
-                    </div>
-                    <div class="model-visual">
-                        <div class="scanner"></div>
-                        <span>Neural Network Active</span>
-                    </div>
-                </div>
 
-                <!-- ADMIN SECTION -->
-                {#if currentUser?.type === 'admin'}
-                    <div class="card glass admin-card full-width">
-                        <div class="card-header">
-                            <h3>User Management</h3>
-                        </div>
-                        <div class="table-container">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>User ID</th>
-                                        <th>Rank</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {#each users as user}
-                                        <tr>
-                                            <td>{user.userid}</td>
-                                            <td>
-                                                <span class="rank-badge" class:admin={user.type === 'admin'}>
-                                                    {user.type.toUpperCase()}
-                                                </span>
-                                            </td>
-                                            <td><span class="dot online"></span> Online</td>
-                                            <td>
-                                                {#if user.userid !== currentUser.userid}
-                                                    <button on:click={() => deleteUser(user.userid)} class="btn-delete">REMOVE</button>
-                                                {/if}
-                                            </td>
-                                        </tr>
-                                    {/each}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                {/if}
+
+
             </div>
         {/if}
     </div>
@@ -319,6 +223,7 @@
         font-size: 1.5rem;
         background: linear-gradient(135deg, #50fa7b, #8be9fd);
         -webkit-background-clip: text;
+        background-clip: text;
         -webkit-text-fill-color: transparent;
     }
 
@@ -349,6 +254,28 @@
     .nav-links a:hover, .nav-links a.active {
         background: rgba(80, 250, 123, 0.1);
         color: #50fa7b;
+    }
+
+    .btn-nav-logout {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        background: transparent;
+        border: none;
+        color: #ff5555;
+        border-radius: 12px;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 1rem;
+        text-align: left;
+        transition: all 0.3s ease;
+        margin-top: auto;
+    }
+
+    .btn-nav-logout:hover {
+        background: rgba(255, 85, 85, 0.1);
+        transform: translateX(4px);
     }
 
     .user-profile {
@@ -422,12 +349,19 @@
         font-weight: 700;
         background: linear-gradient(to right, #fff, #94a3b8);
         -webkit-background-clip: text;
+        background-clip: text;
         -webkit-text-fill-color: transparent;
     }
 
     header p {
         margin: 0.5rem 0 0 0;
         color: #94a3b8;
+    }
+
+    .header-right {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
     }
 
     .status-item {
@@ -440,6 +374,25 @@
         border-radius: 20px;
         font-size: 0.85rem;
         font-weight: 600;
+    }
+
+    .btn-header-logout {
+        background: rgba(255, 85, 85, 0.1);
+        color: #ff5555;
+        border: 1px solid rgba(255, 85, 85, 0.2);
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .btn-header-logout:hover {
+        background: #ff5555;
+        color: #fff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(255, 85, 85, 0.2);
     }
 
     .dot {
@@ -538,7 +491,6 @@
 
     .badge.live { background: #ff5555; color: #fff; }
     .badge.usage { background: #bd93f9; color: #fff; }
-    .badge.ai { background: #8be9fd; color: #000; }
 
     /* CCTV Styles */
     .video-container {
@@ -633,116 +585,9 @@
         transition: stroke-dashoffset 1s ease-out;
     }
 
-    /* AI Stats */
-    .ai-stats {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-    }
 
-    .ai-stat {
-        display: flex;
-        justify-content: space-between;
-        padding-bottom: 8px;
-        border-bottom: 1px solid rgba(255,255,255,0.05);
-    }
 
-    .ai-stat label { font-size: 0.8rem; color: #94a3b8; }
-    .ai-stat span { font-weight: 600; font-size: 0.9rem; }
 
-    .pulse-text {
-        color: #8be9fd;
-        animation: textPulse 2s infinite;
-    }
-
-    @keyframes textPulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
-    }
-
-    .model-visual {
-        margin-top: auto;
-        padding: 1.5rem;
-        background: rgba(0,0,0,0.2);
-        border-radius: 16px;
-        position: relative;
-        overflow: hidden;
-        text-align: center;
-    }
-
-    .scanner {
-        height: 2px;
-        background: #8be9fd;
-        width: 100%;
-        position: absolute;
-        top: 0;
-        left: 0;
-        animation: scan 3s linear infinite;
-        box-shadow: 0 0 15px #8be9fd;
-    }
-
-    @keyframes scan {
-        0% { top: 0; }
-        100% { top: 100%; }
-    }
-
-    /* Admin Table */
-    .full-width { grid-column: span 2; }
-
-    .table-container {
-        overflow-x: auto;
-    }
-
-    table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-
-    th {
-        text-align: left;
-        padding: 12px;
-        color: #94a3b8;
-        font-weight: 500;
-        font-size: 0.85rem;
-        border-bottom: 1px solid rgba(255,255,255,0.05);
-    }
-
-    td {
-        padding: 16px 12px;
-        font-size: 0.9rem;
-    }
-
-    .rank-badge {
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 0.7rem;
-        background: rgba(139, 233, 253, 0.1);
-        color: #8be9fd;
-    }
-
-    .rank-badge.admin {
-        background: rgba(255, 85, 85, 0.1);
-        color: #ff5555;
-    }
-
-    .dot.online { background: #50fa7b; }
-
-    .btn-delete {
-        background: rgba(255, 85, 85, 0.1);
-        color: #ff5555;
-        border: 1px solid rgba(255, 85, 85, 0.2);
-        padding: 6px 12px;
-        border-radius: 8px;
-        font-size: 0.7rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-
-    .btn-delete:hover {
-        background: #ff5555;
-        color: #fff;
-    }
 
     /* Loader */
     .loader-container {
@@ -770,6 +615,5 @@
     /* Responsive */
     @media (max-width: 1100px) {
         .grid-layout { grid-template-columns: 1fr; }
-        .full-width { grid-column: span 1; }
     }
 </style>

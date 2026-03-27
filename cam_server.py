@@ -1,8 +1,3 @@
-# camera_streamer.py
-# Run this on the laptop WITH the webcam
-# pip install flask opencv-python
-# Then open http://YOUR_LAN_IP:5000/stream in a browser to verify
-
 import cv2
 from flask import Flask, Response
 import socket
@@ -12,7 +7,7 @@ app = Flask(__name__)
 camera = cv2.VideoCapture(0)          # 0 = first webcam
 
 
-def generate_frames(frame_rate=15,camera=camera,frame_width=640,frame_height=320):
+def generate_frames(frame_rate=30,camera=camera,frame_width=640,frame_height=320):
     camera.set(cv2.CAP_PROP_FRAME_WIDTH,  frame_width)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
     target_fps = frame_rate
