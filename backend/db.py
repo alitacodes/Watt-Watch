@@ -35,7 +35,7 @@ def get_db_connection():
         raise
 
 if __name__ == "__main__":
-    # Test connection block
+    # Test connection block``
     try:
         conn = get_db_connection()
         print("✅ Successfully connected to the DigitalOcean MySQL database!")

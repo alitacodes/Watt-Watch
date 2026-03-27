@@ -1,6 +1,8 @@
 from ultralytics import YOLO
 from torch import cuda
-model = YOLO("/home/ankan/projects/frost/exp-3.pt")
+import os
+model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'exp-3.pt'))
+model = YOLO(model_path)
 model.to('cuda' if cuda.is_available() else 'cpu')
 
 

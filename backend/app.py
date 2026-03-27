@@ -3,6 +3,7 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from db import get_db_connection
 
 from ultralytics import YOLO
+import torch
 
 import pymysql
 import logging
@@ -22,6 +23,8 @@ DB_PASS = os.getenv("DB_PASS")
 DB_NAME = os.getenv("DB_NAME")
 
 con = get_db_connection()
+model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../ai/exp-3.pt'))
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 app = Flask(__name__, static_folder='../frontend/public', static_url_path='/')
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "super-secret-change-me")
@@ -225,14 +228,13 @@ def get_video(ip, port, ):
     # Always default to True until we positively verify they have admin rights
     
     cap = connect_camera(f"http://{ip}:{port}/stream")
-    model_path = "/home/ankan/projects/Watt-Watch/ai/exp-3.pt"
-    model = YOLO(model_path).to('cuda')
+    model = YOLO(model_path).to(device)
     def generate_frames():
         while True:
             success, frame = cap.read()
             if not success:
                 break
-            results = model.predict(frame, conf=0.15, verbose=False, device='cuda', imgsz=320, iou=0.2)[0]
+            results = model.predict(frame, conf=0.15, verbose=False, device=device, imgsz=320, iou=0.2)[0]
             for box_obj in results.boxes:
                 cls_id = int(box_obj.cls[0])
                 if cls_id == 1:
@@ -254,8 +256,7 @@ def get_video(ip, port, ):
 @require_role('admin')
 def get_video_admin(ip, port):
     cap = connect_camera(f"http://{ip}:{port}/stream")
-    model_path = "/home/ankan/projects/Watt-Watch/ai/exp-3.pt"
-    model = YOLO(model_path).to('cuda')
+
     def generate_frames():
         while True:
             success, frame = cap.read()
