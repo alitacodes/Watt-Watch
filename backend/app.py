@@ -159,39 +159,86 @@ def check_user(userid):
     with con.cursor() as cursor:
         cursor.execute(query, (userid,))
         result = cursor.fetchone()
-    print(result)
     if result is None:
         return {"exists": False}
     return {"exists": True}
 
-# ---- Admin-Only Endpoints ----
-@app.get('/api/v1/users')
-@login_required
-@require_role('admin')
-def get_all_users():
-    """Admin only: Get list of all users"""
-    try:
-        with con.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute("SELECT userid, type FROM users")
-            users = cursor.fetchall()
-        return jsonify({"users": users}), 200
-    except pymysql.MySQLError as e:
-        logging.error(f"Error fetching users: {e}")
-        return jsonify({"error": "Failed to fetch users"}), 500
 
-@app.post('/api/v1/delete_user/<userid>')
+
+@app.get("/api/v1/room/<room_id>")
 @login_required
-@require_role('admin')
-def delete_user(userid):
-    """Admin only: Delete a user"""
+def room_details(room_id):
+    query = "SELECT * FROM rooms WHERE id = %s"
+    with con.cursor() as cursor:
+        cursor.execute(query, (room_id,))
+        result = cursor.fetchone()
+    if result is None:
+        return jsonify({"error": "Room not found"}), 404
+    data = result
+    query = "select * from appliance where room_id = %s"
+    with con.cursor() as cursor:
+        cursor.execute(query, (room_id,))
+        result = cursor.fetchall()
+    data["appliance"] = result
+    return jsonify(data)
+
+@app.get("/api/v1/room/daily_loss/<room_id>")
+@login_required
+def room_daily_loss(room_id):
+    query = "SELECT * FROM energy WHERE room_id = %s AND DATE(miniute) = CURDATE()"
+    with con.cursor() as cursor:
+        cursor.execute(query, (room_id,))
+        result = cursor.fetchall()
+    total = 0
+    for i in result:
+        total += i["loss"]
+    return jsonify({"total_loss": total})
+
+@app.get("/api/v1/room/daily_loss_app/<room_id>")
+@login_required
+def room_daily_los_app(room_id):
+    query = "SELECT * FROM energy WHERE room_id = %s AND DATE(miniute) = CURDATE()"
+    with con.cursor() as cursor:
+        cursor.execute(query, (room_id,))
+        result = cursor.fetchall()
+    total = {}
+    app_id = []
+    for i in result:
+        if i['app_id']   not in app_id:
+            app_id.append(i['app_id'])
+            total[i['app_id']] = 0
+        total[i['app_id']] += i['loss']
+    return jsonify(total)
+
+@app.post("/api/v1/add_room")
+def add_room():
+    request_data = request.get_json()
+    try:
+        no_of_appl = request_data['no_of_appl']
+        zone_count = request_data['zone_count']
+        appl = request_data['appl']
+    except Exception as e:
+        return jsonify({"error": "invalid request"}), 400
+
     try:
         with con.cursor() as cursor:
-            cursor.execute("DELETE FROM users WHERE userid = %s", (userid,))
+            # Insert room and get the new room_id
+            query = "INSERT INTO rooms (no_of_appl, zone_count) VALUES (%s, %s)"
+            cursor.execute(query, (no_of_appl, zone_count))
+            room_id = cursor.lastrowid
+            
+            # Insert each appliance belonging to this new room
+            for i in appl:
+                app_query = "INSERT INTO appliance (room_id, wattage, type, zone) VALUES (%s, %s, %s, %s)"
+                cursor.execute(app_query, (room_id, i['wattage'], i['type'], i['zone']))
+            
         con.commit()
-        return jsonify({"message": "User deleted successfully"}), 200
+        return jsonify({"message": "Room added successfully", "room_id": room_id}), 200
     except pymysql.MySQLError as e:
-        logging.error(f"Error deleting user: {e}")
-        return jsonify({"error": "Failed to delete user"}), 500
+        con.rollback()
+        logging.error(f"Error adding room: {e}")
+        return jsonify({"error": "Database error"}), 500
+
 
 # ---- Mod-Only Endpoints ----
 @app.get('/api/v1/recent_activity')
@@ -233,7 +280,7 @@ def get_video(ip, port, ):
             success, frame = cap.read()
             if not success:
                 break
-            results = model.predict(frame, conf=0.15, verbose=False, device='cuda', imgsz=320, iou=0.2)[0]
+            results = model.predict(frame, conf=0.15, verbose=False, device=device, imgsz=320, iou=0.25)[0]
             for box_obj in results.boxes:
                 cls_id = int(box_obj.cls[0])
                 if cls_id == 1:

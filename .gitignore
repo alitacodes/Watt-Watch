@@ -1,9 +1,16 @@
 .env
-test*
-__pycache__
-*.pyc
-myenv.env
-.env
-backend/.env
 node_modules/
-index.html
+__pycache__/
+*.pyc
+.vscode/
+
+# Build artifacts (these should NEVER be in git)
+frontend/public/build/
+frontend/node_modules/
+dist/
+build/
+
+# IDE files
+.DS_Store
+*.swp
+*.log
