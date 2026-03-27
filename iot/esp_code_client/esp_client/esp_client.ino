@@ -1,63 +1,61 @@
 #include <WiFi.h>
 #include <WebSocketsClient.h>
+#include <ArduinoJson.h>
 
+// --- FIX: DECLARE THESE AT THE TOP ---
 const char* ssid = "FrostHack AP_L4";
 const char* password = "AotL4@169#2026";
-
-// Replace with the IP address of the computer running your Python script
 const char* server_host = "192.168.0.144"; 
 const uint16_t server_port = 8765;
+//
 
 WebSocketsClient webSocket;
 
+struct Device { const char* id; int pin; };
+Device list[] = { {"e0", 19}, {"e1", 18}, {"e2", 17}, {"e3", 16} };
+
+void sendReport(const char* id, int pin) {
+  StaticJsonDocument<128> doc;
+  doc["room"] = 0;
+  doc["appliance"] = id;
+  doc["state"] = (digitalRead(pin) == HIGH) ? 1 : 0; // Using integers
+  String out;
+  serializeJson(doc, out);
+  webSocket.sendTXT(out);
+}
+
+void onMessage(String payload) {
+  StaticJsonDocument<256> doc;
+  deserializeJson(doc, payload);
+  if (doc.containsKey("state")) {
+    const char* target = doc["appliance"];
+    int newState = doc["state"]; // Receive integer 1 or 0
+    for (int i = 0; i < 4; i++) {
+      if (strcmp(target, list[i].id) == 0) {
+        digitalWrite(list[i].pin, (newState == 1) ? HIGH : LOW);
+        sendReport(list[i].id, list[i].pin);
+        break;
+      }
+    }
+  }
+}
+
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
-  switch(type) {
-    case WStype_DISCONNECTED:
-      Serial.println("[WSc] Disconnected!");
-      break;
-    case WStype_CONNECTED:
-      Serial.printf("[WSc] Connected to url: %s\n", payload);
-      // Send a greeting to the Python server
-      webSocket.sendTXT("Hello from ESP32!");
-      break;
-    case WStype_TEXT:
-      Serial.printf("[WSc] Message from Server: %s\n", payload);
-      break;
-    case WStype_BIN:
-      Serial.printf("[WSc] Received binary length: %u\n", length);
-      break;
-    case WStype_ERROR:      
-    case WStype_FRAGMENT_TEXT_START:
-    case WStype_FRAGMENT_BIN_START:
-    case WStype_FRAGMENT:
-    case WStype_FRAGMENT_FIN:
-      break;
+  if (type == WStype_TEXT) onMessage((char*)payload);
+  else if (type == WStype_CONNECTED) {
+    for(int i=0; i<4; i++) sendReport(list[i].id, list[i].pin);
   }
 }
 
 void setup() {
   Serial.begin(115200);
+  for(int i=0; i<4; i++) pinMode(list[i].pin, OUTPUT);
+  
+  WiFi.begin(ssid, password); //
+  while (WiFi.status() != WL_CONNECTED) delay(500);
 
-  // Connect to WiFi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\n[WiFi] Connected!");
-  Serial.print("[IP] ESP32 IP: ");
-  Serial.println(WiFi.localIP());
-
-  // Server address, port, and URL path
-  webSocket.begin(server_host, server_port, "/");
-
-  // Event handler for messages/connection status
   webSocket.onEvent(webSocketEvent);
-
-  // Reconnect if connection fails
-  webSocket.setReconnectInterval(5000);
+  webSocket.begin(server_host, server_port, "/"); //
 }
 
-void loop() {
-  webSocket.loop();
-}
+void loop() { webSocket.loop(); }
