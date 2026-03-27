@@ -21,17 +21,22 @@ DB_PASS = os.getenv("DB_PASS")
 DB_NAME = os.getenv("DB_NAME")
 TW_SID = os.getenv("TW_SID")
 TW_AUTH_TOKEN = os.getenv("TW_AUTH_TOKEN")
+TW_FROM_NUMBER = os.getenv("TW_FROM_NUMBER")
+TW_TO_NUMBER = os.getenv("TW_TO_NUMBER")
 
 def send_sms(body):
     account_sid = TW_SID
     auth_token = TW_AUTH_TOKEN
     client = Client(account_sid, auth_token)
-    message = client.messages.create(
-    from_='+14788003912',
-    body=body,
-    to='+919330588689'
-    )
-    print(message.sid)
+    try:
+        message = client.messages.create(
+            from_ = TW_FROM_NUMBER,
+            to    = TW_TO_NUMBER,
+            body  = body
+        )
+        print(f"[SMS] Sent SID: {message.sid}")
+    except Exception as e:
+        print(f"[SMS ERROR] Failed to send SMS: {e}")
 
 
 
