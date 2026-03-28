@@ -86,6 +86,18 @@
                 alerts = data.alerts || [];
             }
             pollInterval = setInterval(fetchLiveData, 5000);
+
+            // Check camera connectivity
+            try {
+                const camRes = await fetch('/api/v1/camera/status');
+                if (camRes.ok) {
+                    const camData = await camRes.json();
+                    for (const [rid, ok] of Object.entries(camData)) {
+                        if (!ok) camDown[rid] = true;
+                    }
+                    camDown = camDown;
+                }
+            } catch(e) { console.warn('Camera check failed', e); }
         } catch (e) {
             console.error('Dashboard init error', e);
             errorMessage = 'Failed to connect to server';
@@ -100,11 +112,20 @@
     });
 
     let streamKey = 0;
+    let camDown = {};  // {room_id: true} for cameras that failed to connect
 
     function selectRoom(room) {
         selectedRoom = room;
         redacted = true;
-        streamKey = Date.now(); // force stream reconnect
+        streamKey = Date.now();
+    }
+
+    function onFeedError(e) {
+        if (selectedRoom) {
+            camDown[selectedRoom.room_id] = true;
+            camDown = camDown; // trigger reactivity
+        }
+        e.target.src = 'https://placehold.co/640x360/090b10/ff5555?text=Camera+Down';
     }
 
     $: cameraConnected = selectedRoom && selectedRoom.ip && selectedRoom.port;
@@ -150,13 +171,13 @@
                     <span class="stat-label">Total Rooms</span>
                     <strong class="stat-val">{stats.totalRooms}</strong>
                 </div>
-                <div class="stat-card glass" id="stat-waste">
-                    <span class="stat-label">Today's Wastage</span>
-                    <strong class="stat-val warning">{stats.wasteKw} <small>Wh</small></strong>
+                <div class="stat-card glass" id="stat-daily-waste">
+                    <span class="stat-label">Daily Wastage</span>
+                    <strong class="stat-val warning">{stats.dailyWaste ?? stats.wasteKw ?? 0} <small>Wh</small></strong>
                 </div>
-                <div class="stat-card glass" id="stat-total">
-                    <span class="stat-label">Total Capacity</span>
-                    <strong class="stat-val">{stats.totalKw} <small>kW</small></strong>
+                <div class="stat-card glass" id="stat-monthly-waste">
+                    <span class="stat-label">Monthly Wastage</span>
+                    <strong class="stat-val warning">{stats.monthlyWaste ?? 0} <small>Wh</small></strong>
                 </div>
             </div>
 
@@ -188,8 +209,8 @@
                                 src={videoSrc}
                                 alt="CCTV Feed"
                                 class="cctv-feed"
-                                on:error={(e) => e.target.src =
-                                    'https://placehold.co/640x360/090b10/50fa7b?text=Searching+for+Camera+Signal...'}
+                                on:error={onFeedError}
+                                on:load={() => { if (selectedRoom) { delete camDown[selectedRoom.room_id]; camDown = camDown; } }}
                             />
                             {/key}
                         {:else}
@@ -243,8 +264,8 @@
                                         {#if room.p_count > 0}
                                             <span class="p-count-badge">👤 {room.p_count}</span>
                                         {/if}
-                                        <span class="room-cam-badge" class:connected={room.ip && room.port}>
-                                            {room.ip && room.port ? '● Live' : '○ No Cam'}
+                                        <span class="room-cam-badge" class:connected={room.ip && room.port && !camDown[room.room_id]} class:cam-down={camDown[room.room_id]}>
+                                            {#if !(room.ip && room.port)}○ No Cam{:else if camDown[room.room_id]}● Down{:else}● Live{/if}
                                         </span>
                                         <span class="status-dot" style="background:{statusColor(room.status)};box-shadow:0 0 6px {statusColor(room.status)}"></span>
                                     </div>
@@ -613,6 +634,7 @@
         letter-spacing: 0.3px;
     }
     .room-cam-badge.connected { color: #50fa7b; }
+    .room-cam-badge.cam-down { color: #ff5555; }
     
     .p-count-badge {
         font-size: 0.75rem;

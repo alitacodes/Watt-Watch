@@ -207,7 +207,7 @@ COLORS      = {0: (56, 56, 255), 1: (10, 249, 72)}   # BGR
 # MODEL INIT
 # ---------------------------------------------------------------------------
 model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../ai/exp-3.pt'))
-device     = 'cuda' if torch.cuda.is_available() else 'cpu'
+device     = 'cpu' if torch.cuda.is_available() else 'cpu'
 model      = YOLO(model_path).to(device)
 
 print(f"[Server] Model loaded on {model.device.type.upper()}")
@@ -371,12 +371,33 @@ try:
                         threading.Timer(5.0, turn_off_appliance, args=[appliance]).start()
                         print(f"[AUTO] Scheduled turn-off in 5 seconds for {appliance}")
 
-                # CANCEL: appliance turned off while zone is still empty
+                # CANCEL: appliance turned off while zone is still empty — still log the waste
                 elif is_on == 0 and zone_empty and state["active"]:
+                    duration_sec = now - state["time"]
+                    record = {
+                        "room":         room_id,
+                        "zone":         appl_zone,
+                        "appliance":    appliance,
+                        "duration_sec": round(duration_sec, 2),
+                        "duration_min": round(duration_sec / 60, 2),
+                        "start_time":   state["time"],
+                        "end_time":     now,
+                    }
+                    wastage.append(record)
+                    print(f"[WASTE CANCEL] {appliance} (zone {appl_zone}) turned off — Room {room_id} — logging {record['duration_sec']}s of waste")
+                    try:
+                        app_id = int(appliance.split('e')[1])
+                        loss = get_energy_loss(app_id, record["duration_min"])
+                        if loss is not None:
+                            query = "INSERT INTO energy (room_id, app_id, loss) VALUES (%s, %s, %s)"
+                            with con.cursor() as cursor:
+                                cursor.execute(query, (room_id, app_id, round(loss, 4)))
+                            con.commit()
+                    except Exception as e:
+                        print(f"[WASTE CANCEL] Error recording waste: {e}")
                     state["active"]    = False
                     state["time"]      = None
                     state["triggered"] = False
-                    print(f"[WASTE CANCEL] {appliance} (zone {appl_zone}) turned off — Room {room_id}")
 
                 # END + LOG: a person entered the appliance's zone while tracked → genuine waste
                 elif not zone_empty and state["active"]:
@@ -401,6 +422,8 @@ try:
                             with con.cursor() as cursor:
                                 cursor.execute(query, (room_id, app_id, round(loss, 4)))
                             con.commit()
+                        else:
+                            print("loss is NOne")
                     except Exception as e:
                         print(f"[WASTE END]    Error recording waste: {e}")
                     state["active"]    = False

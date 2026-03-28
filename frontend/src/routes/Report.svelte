@@ -151,16 +151,12 @@
 
                             <div class="preview-metrics">
                                 <div class="prev-metric">
-                                    <span class="pm-label">Current Load</span>
-                                    <span class="pm-val">{selectedRoom.current_usage_kw ?? '—'} <small>kW</small></span>
-                                </div>
-                                <div class="prev-metric">
                                     <span class="pm-label">Daily Wastage</span>
-                                    <span class="pm-val">{selectedRoom.daily_wastage_kwh ?? selectedRoom.daily_usage_kwh ?? '—'} <small>kWh</small></span>
+                                    <span class="pm-val">{selectedRoom.daily_wastage_kwh ?? selectedRoom.daily_usage_kwh ?? '—'} <small>Wh</small></span>
                                 </div>
                                 <div class="prev-metric">
                                     <span class="pm-label">Monthly Wastage</span>
-                                    <span class="pm-val">{selectedRoom.monthly_wastage_kwh ?? selectedRoom.monthly_usage_kwh ?? '—'} <small>kWh</small></span>
+                                    <span class="pm-val">{selectedRoom.monthly_wastage_kwh ?? selectedRoom.monthly_usage_kwh ?? '—'} <small>Wh</small></span>
                                 </div>
                                 <div class="prev-metric">
                                     <span class="pm-label">Appliances</span>
@@ -460,7 +456,7 @@
 
     .preview-metrics {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(3, 1fr);
         gap: 1rem;
     }
 

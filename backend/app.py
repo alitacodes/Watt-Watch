@@ -10,11 +10,11 @@ import logging
 import os
 import csv
 import io
-from datetime import datetime, timedelta
+import datetime
+from datetime import timedelta
 from dotenv import load_dotenv
 import cv2
 import time
-import datetime
 from functools import wraps
 from cam import connect_camera, redaction
 
@@ -184,11 +184,17 @@ def get_stats():
             cursor.execute("SELECT COUNT(*) AS total FROM rooms")
             total_rooms = cursor.fetchone()['total']
 
-            # Total waste kW today (sum of energy loss for today)
+            # Daily waste (today) across all rooms
             cursor.execute(
                 "SELECT COALESCE(SUM(loss), 0) AS total_waste FROM energy WHERE DATE(miniute) = CURDATE()"
             )
-            waste_kw = float(cursor.fetchone()['total_waste'])
+            daily_waste = round(float(cursor.fetchone()['total_waste']), 2)
+
+            # Monthly waste (this month) across all rooms
+            cursor.execute(
+                "SELECT COALESCE(SUM(loss), 0) AS total_waste FROM energy WHERE YEAR(miniute) = YEAR(CURDATE()) AND MONTH(miniute) = MONTH(CURDATE())"
+            )
+            monthly_waste = round(float(cursor.fetchone()['total_waste']), 2)
 
             # Total kW: sum of wattage of all appliances / 1000
             cursor.execute("SELECT COALESCE(SUM(wattage), 0) AS total_w FROM appliance")
@@ -196,7 +202,9 @@ def get_stats():
 
         return jsonify({
             "totalRooms": total_rooms,
-            "wasteKw": round(waste_kw, 2),
+            "wasteKw": daily_waste,
+            "dailyWaste": daily_waste,
+            "monthlyWaste": monthly_waste,
             "totalKw": total_kw
         })
     finally:
@@ -318,23 +326,19 @@ def get_rooms_list():
             room['status'] = s_data['status']
             room['p_count'] = s_data['p_count']
             room['current_usage_kw'] = usage_map.get(rid, 0)
-<<<<<<< HEAD
-            room['daily_usage_kwh'] = round(daily_map.get(rid, 0), 3)
-            room['monthly_usage_kwh'] = round(monthly_map.get(rid, 0), 3)
-            # Aliases for wastage-focused views
-            room['daily_wastage_kwh'] = room['daily_usage_kwh']
-            room['monthly_wastage_kwh'] = room['monthly_usage_kwh']
-=======
-            
+
             # Map bars for this room
             room_d_bars = [daily_bars_map.get(rid, {}).get(d, 0.0) for d in last_7_days]
             room_m_bars = [monthly_bars_map.get(rid, {}).get(ym, 0.0) for ym in last_12_months]
             
             room['daily_usage_kwh'] = round(room_d_bars[-1], 3)
             room['monthly_usage_kwh'] = round(room_m_bars[-1], 3)
+            # Aliases for wastage-focused views
+            room['daily_wastage_kwh'] = room['daily_usage_kwh']
+            room['monthly_wastage_kwh'] = room['monthly_usage_kwh']
             room['daily_bars'] = room_d_bars
             room['monthly_bars'] = room_m_bars
->>>>>>> 0cc118ef1f0223f8bc1a2574162501de947d1d57
+
 
         return jsonify({"rooms": rooms})
     finally:
@@ -436,7 +440,7 @@ def weekly_wastage():
             rows = cursor.fetchall()
 
         # Build a full 7-day series (fill missing days with 0)
-        today = datetime.now().date()
+        today = datetime.datetime.now().date()
         day_map = {}
         for r in rows:
             day_map[r['day']] = round(float(r['total_wh']), 4)
@@ -458,7 +462,9 @@ def weekly_wastage():
 @app.get("/api/v1/wastage/csv/<int:room_id>")
 @login_required
 def download_room_csv(room_id):
-    """Download a CSV of daily wastage for a room over the last 30 days."""
+    """Download an Excel file of daily wastage for a room over the last 30 days."""
+    import pandas as pd
+
     con_local = get_db_connection()
     try:
         with con_local.cursor() as cursor:
@@ -471,32 +477,82 @@ def download_room_csv(room_id):
             """, (room_id,))
             rows = cursor.fetchall()
 
-        # Build a full 30-day series
-        today = datetime.now().date()
+        today = datetime.datetime.now().date()
         day_map = {}
         for r in rows:
             day_map[r['day']] = round(float(r['total_wh']), 4)
 
-        output = io.StringIO()
-        # UTF-8 BOM so Excel opens the file correctly
-        output.write('\ufeff')
-        writer = csv.writer(output)
-        writer.writerow(["Date", "Wastage (Wh)"])
+        dates = []
+        wastages = []
         for i in range(29, -1, -1):
             d = today - timedelta(days=i)
-            # Use DD/MM/YYYY format which Excel auto-sizes properly
-            writer.writerow([d.strftime("%d/%m/%Y"), day_map.get(d, 0)])
+            dates.append(d.strftime("%d/%m/%Y"))
+            wastages.append(day_map.get(d, 0))
+
+        df = pd.DataFrame({"Date": dates, "Wastage (Wh)": wastages})
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Wastage Report')
+            ws = writer.sheets['Wastage Report']
+            ws.column_dimensions['A'].width = 15
+            ws.column_dimensions['B'].width = 15
 
         output.seek(0)
         return Response(
             output.getvalue(),
-            mimetype='text/csv',
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             headers={
-                'Content-Disposition': f'attachment; filename=room-{room_id}-wastage-report.csv'
+                'Content-Disposition': f'attachment; filename=room-{room_id}-wastage-report.xlsx'
             }
         )
     finally:
         con_local.close()
+
+
+@app.get("/api/v1/camera/status")
+@login_required
+def camera_status():
+    """Quick health check for all room cameras. Returns {room_id: true/false}."""
+    import threading
+    con_local = get_db_connection()
+    try:
+        with con_local.cursor() as cursor:
+            cursor.execute("SELECT id, ip, port FROM rooms WHERE ip IS NOT NULL AND port IS NOT NULL")
+            rooms = cursor.fetchall()
+    finally:
+        con_local.close()
+
+    results = {}
+    threads = []
+
+    def check(rid, ip, port):
+        try:
+            cap = cv2.VideoCapture(f"http://{ip}:{port}/stream")
+            if cap.isOpened():
+                results[rid] = True
+                cap.release()
+            else:
+                results[rid] = False
+                cap.release()
+        except Exception:
+            results[rid] = False
+
+    for r in rooms:
+        t = threading.Thread(target=check, args=(r['id'], r['ip'], r['port']), daemon=True)
+        threads.append(t)
+        t.start()
+
+    # Wait max 3 seconds for all checks
+    for t in threads:
+        t.join(timeout=3)
+
+    # Any room not in results after timeout is down
+    for r in rooms:
+        if r['id'] not in results:
+            results[r['id']] = False
+
+    return jsonify(results)
 
 
 # ---- Mod-Only Endpoints ----

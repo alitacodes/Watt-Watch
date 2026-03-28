@@ -43,16 +43,32 @@ def redaction(frame, box, class_id = 1, conf = 0.5):
     frame[y1b:y2b, x1b:x2b] = blurred_roi
 
 
-def connect_camera(url, retries=5):
-    """Keeps retrying until camera stream is available."""
+import threading
+
+def connect_camera(url, retries=2, timeout=5):
+    """Try to open camera stream with a per-attempt timeout. Fails fast on unreachable IPs."""
     for i in range(retries):
-        cap = cv2.VideoCapture(url)
-        if cap.isOpened():
+        result = {}
+        def _open():
+            try:
+                cap = cv2.VideoCapture(url)
+                if cap.isOpened():
+                    result['cap'] = cap
+                else:
+                    cap.release()
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_open, daemon=True)
+        t.start()
+        t.join(timeout=timeout)
+
+        if 'cap' in result:
             print(f"[Server] Connected to camera stream")
-            return cap
-        print(f"[Server] Attempt {i+1} failed, retrying...")
-        time.sleep(2)
-    raise ConnectionError("Could not connect to camera")
+            return result['cap']
+        print(f"[Server] Attempt {i+1}/{retries} timed out for {url}")
+
+    raise ConnectionError(f"Could not connect to camera at {url}")
 
 if __name__ == '__main__':
 # Load YOLO model
