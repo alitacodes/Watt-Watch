@@ -6,7 +6,6 @@
     let loading = false;
     let errorMsg = '';
 
-    // Form state
     let ip = '';
     let port = '';
     let zone_count = 1;
@@ -39,7 +38,6 @@
         loading = true;
         errorMsg = '';
 
-        // Validation
         if (!zone_count || zone_count < 1) {
             errorMsg = "Zone count must be at least 1.";
             loading = false;
@@ -74,7 +72,6 @@
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
-                // Redirect user back to rooms list
                 window.location.href = '/rooms';
             } else {
                 const data = await res.json();

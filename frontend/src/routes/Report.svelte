@@ -8,7 +8,6 @@
     let searchQuery = '';
     let selectedRoom = null;
 
-    // Weekly wastage chart data
     let weeklyData = [];
 
     $: filteredRooms = rooms.filter(r =>
@@ -57,7 +56,6 @@
         return '#ffb86c';
     }
 
-    // Build SVG polyline + points from weekly data
     function buildPolyline(data, width = 380, height = 120) {
         if (!data.length) return { line: '', area: '', points: [] };
         const vals = data.map(d => d.wastage_wh);
@@ -77,7 +75,6 @@
 
     function downloadCSV() {
         if (!selectedRoom) return;
-        // Trigger the backend CSV download endpoint
         window.location.href = `/api/v1/wastage/csv/${selectedRoom.room_id}`;
     }
 </script>
@@ -100,10 +97,8 @@
             </header>
 
             <div class="report-grid">
-                <!-- ── Left Main Column ── -->
                 <div class="report-main">
 
-                    <!-- Search -->
                     <div class="search-card glass" id="search-card">
                         <div class="search-inner">
                             <span class="search-icon">🔍</span>
@@ -133,7 +128,6 @@
                         {/if}
                     </div>
 
-                    <!-- Preview Card -->
                     <div class="preview-card glass" id="preview-card">
                         {#if selectedRoom}
                             <div class="preview-header">
@@ -171,7 +165,6 @@
                         {/if}
                     </div>
 
-                    <!-- Wastage Graph Card -->
                     <div class="graph-card glass" id="graph-card">
                         <div class="graph-header">
                             <h3>Wastage Graph — Last 7 Days (All Rooms)</h3>
@@ -180,7 +173,6 @@
                         <div class="svg-wrap">
                             {#if weeklyData.length > 0}
                                 <svg viewBox="0 0 380 130" preserveAspectRatio="none">
-                                    <!-- Grid lines -->
                                     {#each [0,1,2,3] as g}
                                         <line
                                             x1="0" y1="{10 + g*30}"
@@ -189,7 +181,6 @@
                                         />
                                     {/each}
 
-                                    <!-- Area fill -->
                                     <defs>
                                         <linearGradient id="grad-wastage" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="0%" stop-color="#ffb86c" stop-opacity="0.3"/>
@@ -209,13 +200,11 @@
                                         stroke-linejoin="round"
                                     />
 
-                                    <!-- Data points -->
                                     {#each chartData.points as pt}
                                         <circle cx={pt.x} cy={pt.y} r="3.5" fill="#ffb86c" stroke="#090b10" stroke-width="1.5"/>
                                     {/each}
                                 </svg>
 
-                                <!-- X-axis labels -->
                                 <div class="x-labels">
                                     {#each chartLabels as lbl}
                                         <span>{lbl}</span>
@@ -229,7 +218,6 @@
                             {/if}
                         </div>
 
-                        <!-- Legend -->
                         <div class="graph-legend">
                             <span class="legend-item">
                                 <span class="legend-dot" style="background:#ffb86c"></span>
@@ -239,7 +227,6 @@
                     </div>
                 </div>
 
-                <!-- ── Right: Room Overview Panel ── -->
                 <aside class="room-overview glass" id="report-room-overview">
                     <h3>Room Overview</h3>
                     <div class="overview-scroll">
@@ -332,7 +319,6 @@
 
     .subtitle { margin: 4px 0 0; color: #64748b; font-size: 0.88rem; }
 
-    /* ── Layout ── */
     .report-grid {
         display: grid;
         grid-template-columns: 1fr 260px;
@@ -343,14 +329,12 @@
 
     .report-main { display: flex; flex-direction: column; gap: 1.2rem; }
 
-    /* ── Glass ── */
     .glass {
         background: rgba(18,21,32,0.55);
         backdrop-filter: blur(14px);
         border: 1px solid rgba(255,255,255,0.05);
     }
 
-    /* ── Search ── */
     .search-card {
         border-radius: 16px;
         overflow: visible;
@@ -422,7 +406,6 @@
     .dd-id { font-size: 0.9rem; color: #e2e8f0; }
     .dd-status { font-size: 0.75rem; font-weight: 600; }
 
-    /* ── Preview Card ── */
     .preview-card {
         border-radius: 18px;
         padding: 1.4rem;
@@ -487,7 +470,6 @@
     .empty-icon { font-size: 2rem; }
     .preview-empty p { margin: 0; font-size: 0.85rem; }
 
-    /* ── Graph Card ── */
     .graph-card {
         border-radius: 18px;
         padding: 1.4rem;
@@ -553,7 +535,6 @@
 
     .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
-    /* ── Room Overview Panel ── */
     .room-overview {
         border-radius: 20px;
         padding: 1.4rem;

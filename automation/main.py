@@ -9,7 +9,6 @@ import torch
 from ultralytics import YOLO
 import pymysql
 from dotenv import load_dotenv
-
 from twilio.rest import Client
 
 automation = True
@@ -42,8 +41,6 @@ def send_sms(body):
         print(f"[SMS ERROR] Failed to send SMS: {e}")
 
 def turn_off_appliance(appliance):
-    """Send GET to IoT server to turn off appliance, then update esp.json."""
-    # Split key e.g. "1e0" → room="1", appl="e0"
     room = appliance.split('e')[0]
     appl = 'e' + appliance.split('e')[1]
     url  = f"{ESP_SERVER}/{room}/{appl}/0"
@@ -54,7 +51,6 @@ def turn_off_appliance(appliance):
         print(f"[AUTO ERROR] Failed to reach IoT server: {e}")
         return
 
-    # Update local esp.json so the loop picks up the change immediately
     try:
         with open(ESP_JSON) as f:
             data = json.load(f)
@@ -65,12 +61,7 @@ def turn_off_appliance(appliance):
     except Exception as e:
         print(f"[AUTO WARN] Could not update esp.json: {e}")
 
-
-
 def get_db_connection():
-    """
-    Creates and returns a secure connection to the DigitalOcean MySQL database.
-    """
     try:
         connection = pymysql.connect(
             host=DB_HOST,
@@ -79,7 +70,6 @@ def get_db_connection():
             password=DB_PASS,
             database=DB_NAME,
             cursorclass=pymysql.cursors.DictCursor,
-            # DigitalOcean requires SSL. Passing an empty/basic config forces SSL mode.
             ssl={
                 "reject_hostname": False
             }
@@ -89,13 +79,10 @@ def get_db_connection():
         logging.error(f"Error connecting to MySQL Database: {e}")
         raise
 con = get_db_connection()
-# ---------------------------------------------------------------------------
-# ESP JSON PATH — live-reloaded every loop iteration
-# ---------------------------------------------------------------------------
+
 ESP_JSON = os.path.join(os.path.dirname(__file__), "esp.json")
 
 def load_esp_state():
-    """Read esp.json from disk. Falls back to all-off on error."""
     try:
         with open(ESP_JSON) as f:
             return json.load(f)
@@ -104,11 +91,9 @@ def load_esp_state():
         return {}
 
 def check_appl(esp_state, room_id):
-    """Return appliances belonging to this room."""
     return {k: v for k, v in esp_state.items() if k.split('e')[0] == str(room_id)}
 
 def get_energy_loss(app_id: int, duration_min: float) -> float | None:
-    """Query wattage for app_id, compute and return energy loss in Wh. Prints result."""
     try:
         with con.cursor() as cursor:
             cursor.execute("SELECT wattage FROM appliance WHERE id = %s", (app_id,))
@@ -116,8 +101,8 @@ def get_energy_loss(app_id: int, duration_min: float) -> float | None:
         if not row:
             print(f"[DB WARN] No appliance found for id={app_id}")
             return None
-        wattage  = row["wattage"]               # W
-        loss_wh  = wattage * (duration_min / 60) # Wh
+        wattage  = row["wattage"]
+        loss_wh  = wattage * (duration_min / 60)
         print(f"[ENERGY LOSS]  app_id={app_id}  wattage={wattage}W  "
               f"duration={duration_min:.2f}min  loss={loss_wh:.4f}Wh")
         return loss_wh
@@ -125,16 +110,7 @@ def get_energy_loss(app_id: int, duration_min: float) -> float | None:
         print(f"[DB ERROR] get_energy_loss: {e}")
         return None
 
-# ---------------------------------------------------------------------------
-# ZONE MAPPING — built from DB at startup
-# ---------------------------------------------------------------------------
 def load_zone_config():
-    """Query rooms + appliance tables to build zone mappings.
-    Returns:
-        room_zones:  {room_id: zone_count}  e.g. {1: 2, 2: 1}
-        appl_zones:  {esp_key: zone}        e.g. {'1e0': 0, '1e1': 1, '2e2': 0}
-        ip_map:      {room_id: stream_url}
-    """
     room_zones = {}
     appl_zones = {}
     ip_map     = {}
@@ -149,30 +125,23 @@ def load_zone_config():
 
             cursor.execute("SELECT id, room_id, zone FROM appliance")
             for a in cursor.fetchall():
-                # Build all possible ESP key formats for this appliance
                 esp_key = f"{a['room_id']}e{a['id']}"
                 appl_zones[esp_key] = a['zone']
     except Exception as e:
         print(f"[DB ERROR] load_zone_config: {e}")
     return room_zones, appl_zones, ip_map
 
-
 def get_person_zone(cx, frame_width, zone_count):
-    """Given a person's center-x, frame width, and zone count, return which zone they are in.
-    Zone layout:  zone 0 = left, zone 1 = middle (if 3 zones) or right (if 2), zone 2 = right
-    """
     if zone_count <= 1:
         return 0
     zone_width = frame_width / zone_count
     zone = int(cx / zone_width)
-    return min(zone, zone_count - 1)  # clamp to last zone
-
+    return min(zone, zone_count - 1)
 
 def count_people_per_zone(result_boxes, frame_width, zone_count):
-    """Count people (class 0) in each zone. Returns dict {zone_idx: count}."""
     counts = {z: 0 for z in range(zone_count)}
     for box in result_boxes:
-        if int(box.cls[0]) != 0:  # only count persons
+        if int(box.cls[0]) != 0:
             continue
         x1, _, x2, _ = box.xyxy[0].tolist()
         cx = (x1 + x2) / 2.0
@@ -180,44 +149,31 @@ def count_people_per_zone(result_boxes, frame_width, zone_count):
         counts[zone] += 1
     return counts
 
-
-# Load zone config from DB
 room_zones, appl_zones, ip_map = load_zone_config()
 print(f"[ZONES] room_zones = {room_zones}")
 print(f"[ZONES] appl_zones = {appl_zones}")
 print(f"[ZONES] ip_map     = {ip_map}")
 
-# ---------------------------------------------------------------------------
-# WASTE TRACKING STATE  (keyed by appliance id e.g. "1e2")
-# ---------------------------------------------------------------------------
-TRIGGER_DELAY = 10   # seconds of empty zone before the trigger fires
+TRIGGER_DELAY = 10
 
-waste_track: dict[str, dict] = {}   # populated dynamically as esp.json is read
+waste_track: dict[str, dict] = {}
 
 wastage: list[dict] = []
 room_status = {rid: 'empty' for rid in ip_map}
 
-# ---------------------------------------------------------------------------
-# CONFIG
-# ---------------------------------------------------------------------------
 CLASS_NAMES = {0: "person", 1: "face"}
-COLORS      = {0: (56, 56, 255), 1: (10, 249, 72)}   # BGR
+COLORS      = {0: (56, 56, 255), 1: (10, 249, 72)}
 
-# ---------------------------------------------------------------------------
-# MODEL INIT
-# ---------------------------------------------------------------------------
 model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../ai/exp-3.pt'))
 device     = 'cpu' if torch.cuda.is_available() else 'cpu'
 model      = YOLO(model_path).to(device)
 
 print(f"[Server] Model loaded on {model.device.type.upper()}")
 
-# Open camera captures — skip cameras that fail to connect (5s timeout)
 caps = {}
-CAM_TIMEOUT = 5  # seconds
+CAM_TIMEOUT = 5
 
 def _try_open(room_id, url, result_dict):
-    """Try to open a camera in a thread so we can enforce a timeout."""
     try:
         cap = cv2.VideoCapture(url)
         if cap.isOpened():
@@ -240,46 +196,35 @@ for room_id, url in ip_map.items():
 
 prev_time = {room_id: time.time() for room_id in caps}
 
-# Frame throttling state: room_id -> timestamp
 room_empty_since = {rid: None for rid in ip_map}
 last_processed   = {rid: 0.0 for rid in ip_map}
 
 print("[Server] Running... Press 'q' to quit.")
 
-# ---------------------------------------------------------------------------
-# MAIN LOOP
-# ---------------------------------------------------------------------------
 try:
     while True:
-        # Re-read ESP state from disk every tick (live updates)
         esp_state = load_esp_state()
 
-        # Ensure waste_track has entries for all known appliances
         for key in esp_state:
             if key not in waste_track:
                 waste_track[key] = {"active": False, "time": None, "triggered": False}
 
-        # Snapshot keys to avoid RuntimeError if caps dict changes mid-loop
         for room_id in list(caps.keys()):
             cap = caps[room_id]
 
-            # ---------- reconnect if needed ----------
             if not cap.isOpened():
                 print(f"[Server] Room {room_id} reconnecting...")
                 caps[room_id] = cv2.VideoCapture(ip_map[room_id])
                 continue
 
-            # ---------- power saving throttle ----------
-            # If room empty for > 60s, only process AI once per second
             now_loop = time.time()
             if room_empty_since.get(room_id) and (now_loop - room_empty_since[room_id] > 60):
                 if (now_loop - last_processed.get(room_id, 0.0)) < 1.0:
-                    cap.grab() # clear buffer but skip expensive decoding & AI
+                    cap.grab()
                     continue
             
             last_processed[room_id] = now_loop
 
-            # ---------- grab freshest frame ----------
             cap.grab()
             ret, frame = cap.retrieve()
 
@@ -289,7 +234,6 @@ try:
                 caps[room_id] = cv2.VideoCapture(ip_map[room_id])
                 continue
 
-            # ---------- AI inference ----------
             result = model.predict(
                 frame, imgsz=320, conf=0.25, device=device, verbose=False
             )[0]
@@ -297,10 +241,8 @@ try:
             frame_h, frame_w = frame.shape[:2]
             zone_count = room_zones.get(room_id, 1)
 
-            # ---------- per-zone people count ----------
             zone_people = count_people_per_zone(result.boxes, frame_w, zone_count)
 
-            # Update empty-time tracker (whole room)
             if people > 0:
                 room_empty_since[room_id] = None
             else:
@@ -330,24 +272,20 @@ try:
                     cursor.execute("INSERT INTO alerts (timestamp, room_id, info) VALUES (NOW(), %s, %s)", (room_id, f"Room {room_id} is now empty"))
                     con.commit()
 
-            # ---------- appliance state for this room ----------
             appliances = check_appl(esp_state, room_id)
             now        = time.time()
 
-            # ---------- zone-aware waste logic ----------
             for appliance, is_on in appliances.items():
                 state = waste_track[appliance]
-                appl_zone = appl_zones.get(appliance, 0)   # which zone this appliance is in
-                zone_empty = (zone_people.get(appl_zone, 0) == 0)  # is that zone empty?
+                appl_zone = appl_zones.get(appliance, 0)
+                zone_empty = (zone_people.get(appl_zone, 0) == 0)
 
-                # START: zone empty and appliance on → begin tracking
                 if zone_empty and is_on == 1 and not state["active"]:
                     state["active"]    = True
                     state["time"]      = now
                     state["triggered"] = False
                     print(f"[WASTE START]  {appliance} (zone {appl_zone}) left on in empty zone — Room {room_id}")
 
-                # TRIGGER: still wasting — fire once after TRIGGER_DELAY seconds
                 elif state["active"] and not state["triggered"] and (now - state["time"]) >= TRIGGER_DELAY:
                     state["triggered"] = True
                     elapsed = round(now - state["time"], 1)
@@ -371,7 +309,6 @@ try:
                         threading.Timer(5.0, turn_off_appliance, args=[appliance]).start()
                         print(f"[AUTO] Scheduled turn-off in 5 seconds for {appliance}")
 
-                # CANCEL: appliance turned off while zone is still empty — still log the waste
                 elif is_on == 0 and zone_empty and state["active"]:
                     duration_sec = now - state["time"]
                     record = {
@@ -399,7 +336,6 @@ try:
                     state["time"]      = None
                     state["triggered"] = False
 
-                # END + LOG: a person entered the appliance's zone while tracked → genuine waste
                 elif not zone_empty and state["active"]:
                     duration_sec = now - state["time"]
 
@@ -447,13 +383,11 @@ try:
                 cv2.putText(frame, label, (x1 + 2, y1 - 3),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
 
-            # Draw zone dividers on frame
             if zone_count > 1:
                 zone_w = frame_w // zone_count
                 for zi in range(1, zone_count):
                     x = zi * zone_w
                     cv2.line(frame, (x, 0), (x, frame_h), (255, 255, 0), 1, cv2.LINE_AA)
-                # Zone labels at the top
                 zone_names = ["L", "M", "R"] if zone_count == 3 else ["L", "R"]
                 for zi in range(zone_count):
                     zx = zi * zone_w + 6
@@ -461,7 +395,6 @@ try:
                     cv2.putText(frame, ztxt, (zx, frame_h - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1, cv2.LINE_AA)
 
-            # HUD overlay
             appl_summary = "  ".join(
                 f"{k}={'ON' if v else 'off'}" for k, v in appliances.items()
             )
@@ -475,17 +408,15 @@ try:
 
             print(f"[Room {room_id}] People: {people} | Zones: {dict(zone_people)} | FPS: {fps:.1f}")
 
-        # 'q' in any window quits
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-        time.sleep(0.03)   # ~30 Hz cap; inference is the real limiter
+        time.sleep(0.03)
 
 except KeyboardInterrupt:
     print("\n[Server] Stopped by user.")
 
 finally:
-    # Reset all rooms in DB to 'empty' / 0 people so dashboard stays clean
     try:
         with con.cursor() as cursor:
             cursor.execute("UPDATE status SET status = 'empty', p_count = 0")

@@ -11,7 +11,6 @@
             });
 
             if (response.ok) {
-                // Redirect to login page after successful logout
                 window.location.href = '/login';
             } else {
                 const data = await response.json();
@@ -25,7 +24,6 @@
     }
 
     onMount(() => {
-        // Automatically logout when this component mounts
         handleLogout();
     });
 </script>

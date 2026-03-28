@@ -16,7 +16,6 @@
                 body: JSON.stringify({ userid: username, password: password })
             });
 
-            // Use vanilla window.location.href for clean URL navigation
             if (response.ok) {
                 window.location.href = '/dashboard';
             } else {

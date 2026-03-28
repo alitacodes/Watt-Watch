@@ -83,7 +83,6 @@
             </header>
 
             <div class="rooms-layout">
-                <!-- ── Left: Room Cards Stack ── -->
                 <div class="rooms-stack">
                     {#if rooms.length === 0}
                         <div class="empty-state glass">
@@ -212,7 +211,6 @@
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Header ── */
     .page-header {
         display: flex;
         justify-content: space-between;
@@ -245,7 +243,6 @@
 
     .btn-report:hover { background: rgba(80,250,123,0.18); transform: translateY(-1px); }
 
-    /* ── Layout ── */
     .rooms-layout {
         display: flex;
         flex-direction: column;
@@ -254,7 +251,6 @@
         min-height: 0;
     }
 
-    /* ── Rooms Stack ── */
     .rooms-stack {
         display: flex;
         flex-direction: column;
@@ -279,7 +275,6 @@
 
     .empty-state p { font-size: 0.9rem; margin: 0; }
 
-    /* ── Room Card ── */
     .glass {
         background: rgba(18,21,32,0.55);
         backdrop-filter: blur(14px);

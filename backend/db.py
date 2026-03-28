@@ -13,9 +13,6 @@ DB_NAME = os.getenv("DB_NAME")
 
 
 def get_db_connection():
-    """
-    Creates and returns a secure connection to the DigitalOcean MySQL database.
-    """
     try:
         connection = pymysql.connect(
             host=DB_HOST,
@@ -24,7 +21,6 @@ def get_db_connection():
             password=DB_PASS,
             database=DB_NAME,
             cursorclass=pymysql.cursors.DictCursor,
-            # DigitalOcean requires SSL. Passing an empty/basic config forces SSL mode.
             ssl={
                 "reject_hostname": False
             }
@@ -35,7 +31,6 @@ def get_db_connection():
         raise
 
 if __name__ == "__main__":
-    # Test connection block``
     try:
         conn = get_db_connection()
         print("✅ Successfully connected to the DigitalOcean MySQL database!")

@@ -70,13 +70,11 @@
                 rooms = data.rooms || [];
                 stats.totalRooms = rooms.length;
 
-                // Check if a specific room was requested via ?room=N (from "View Feed" button)
                 const params = new URLSearchParams(window.location.search);
                 const requestedRoomId = params.get('room');
                 if (requestedRoomId) {
                     selectedRoom = rooms.find(r => String(r.room_id) === String(requestedRoomId)) || null;
                 }
-                // If none requested (or not found), auto-select first room with a camera
                 if (!selectedRoom) {
                     selectedRoom = rooms.find(r => r.ip && r.port) || rooms[0] || null;
                 }
@@ -87,7 +85,6 @@
             }
             pollInterval = setInterval(fetchLiveData, 5000);
 
-            // Check camera connectivity
             try {
                 const camRes = await fetch('/api/v1/camera/status');
                 if (camRes.ok) {
@@ -112,7 +109,7 @@
     });
 
     let streamKey = 0;
-    let camDown = {};  // {room_id: true} for cameras that failed to connect
+    let camDown = {};
 
     function selectRoom(room) {
         selectedRoom = room;
@@ -123,7 +120,7 @@
     function onFeedError(e) {
         if (selectedRoom) {
             camDown[selectedRoom.room_id] = true;
-            camDown = camDown; // trigger reactivity
+            camDown = camDown;
         }
         e.target.src = 'https://placehold.co/640x360/090b10/ff5555?text=Camera+Down';
     }
@@ -241,8 +238,6 @@
                     </div>
                 </div>
 
-
-
                 <div class="right-col">
                     <aside class="room-panel glass" id="room-overview-panel">
                         <h3>Room Overview</h3>
@@ -298,7 +293,6 @@
                         </div>
                     </aside>
                 </div>
-
 
             </div>
         {/if}
@@ -423,8 +417,6 @@
     .stat-val small { font-size: 0.8rem; color: #94a3b8; font-weight: 400; }
     .stat-val.warning { color: #ffb86c; }
 
-
-
     .dashboard-grid {
         display: grid;
         grid-template-columns: 1fr 280px;
@@ -538,7 +530,6 @@
         border-color: rgba(80,250,123,0.15);
     }
 
-
     .right-col {
         display: flex;
         flex-direction: column;
@@ -646,7 +637,6 @@
         margin-right: 4px;
     }
 
-    /* ── No Camera placeholder ── */
     .no-camera {
         width: 100%; height: 100%;
         display: flex;
@@ -675,8 +665,6 @@
         transition: background 0.2s;
     }
     .view-all-btn:hover { background: rgba(80,250,123,0.15); }
-
-
 
     @media (max-width: 1100px) {
         .dashboard-grid.panel-open { grid-template-columns: 1fr 260px; grid-template-rows: auto auto; }

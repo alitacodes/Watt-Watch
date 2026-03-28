@@ -1,10 +1,8 @@
 from flask import Flask, request, jsonify, Response, redirect, url_for, send_file
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from db import get_db_connection
-
 from ultralytics import YOLO
 import torch
-
 import pymysql
 import logging
 import os
@@ -17,7 +15,6 @@ import cv2
 import time
 from functools import wraps
 from cam import connect_camera, redaction
-
 
 load_dotenv()
 
@@ -34,12 +31,10 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 app = Flask(__name__, static_folder='../frontend/public', static_url_path='/')
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "super-secret-change-me")
 
-# --- 1. Flask-Login Setup ---
 login_manager = LoginManager()
 login_manager.init_app(app)
-# ---- Role-Based Access Control Decorator ----
+
 def require_role(*allowed_roles):
-    """Decorator to check if user has one of the allowed roles"""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -51,12 +46,10 @@ def require_role(*allowed_roles):
         return decorated_function
     return decorator
 
-
 class User(UserMixin):
     def __init__(self, userid, user_type):
-        self.id = userid       # Maps to 'userid' in your table
-        self.user_type = user_type # Maps to 'type' in your table
-        
+        self.id = userid
+        self.user_type = user_type
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -71,7 +64,6 @@ def load_user(user_id):
     finally:
         con.close()
 
-# ---- Dedicated Web Routes ----
 @app.route('/')
 def home():
     if not current_user.is_authenticated:
@@ -111,7 +103,6 @@ def report_page():
 def create_room_page():
     return app.send_static_file('index.html')
 
-# Catch-all to still serve CSS/JS (needed so Svelte can load its assets)
 @app.route('/<path:path>')
 def catch_all(path):
     if path.startswith('api/'):
@@ -119,8 +110,6 @@ def catch_all(path):
     if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         return app.send_static_file(path)
     return app.send_static_file('index.html')
-
-#-----api -----
 
 @app.get('/api/v1/auth/status')
 def auth_status():
@@ -140,18 +129,13 @@ def login_api():
     con = get_db_connection()
     try:
         with con.cursor(pymysql.cursors.DictCursor) as cursor:
-            # Simple check against your 'users' table
             query = "SELECT userid, password, type FROM users WHERE userid = %s"
             cursor.execute(query, (username_input,))
             user_data = cursor.fetchone()
 
-            # Verify existence and password (raw string check as requested)
             if user_data and user_data['password'] == password_input:
                 user_obj = User(userid=user_data['userid'], user_type=user_data['type'])
-                
-                # This function handles the creation of the session cookie
                 login_user(user_obj)
-                
                 return jsonify({"message": "Login successful", "userid": user_obj.id}), 200
             
             return jsonify({"error": "Invalid userid or password"}), 401
@@ -164,7 +148,6 @@ def logout_api():
     logout_user()
     return jsonify({"message": "Logged out"}), 200
 
-
 @app.get('/api/v1/check_user/<userid>')
 def check_user(userid):
     query = "SELECT userid FROM users WHERE userid = %s"
@@ -174,29 +157,26 @@ def check_user(userid):
     if result is None:
         return {"exists": False}
     return {"exists": True}
+
 @app.get("/api/v1/stats")
 @login_required
 def get_stats():
     con_local = get_db_connection()
     try:
         with con_local.cursor() as cursor:
-            # Total rooms
             cursor.execute("SELECT COUNT(*) AS total FROM rooms")
             total_rooms = cursor.fetchone()['total']
 
-            # Daily waste (today) across all rooms
             cursor.execute(
                 "SELECT COALESCE(SUM(loss), 0) AS total_waste FROM energy WHERE DATE(miniute) = CURDATE()"
             )
             daily_waste = round(float(cursor.fetchone()['total_waste']), 2)
 
-            # Monthly waste (this month) across all rooms
             cursor.execute(
                 "SELECT COALESCE(SUM(loss), 0) AS total_waste FROM energy WHERE YEAR(miniute) = YEAR(CURDATE()) AND MONTH(miniute) = MONTH(CURDATE())"
             )
             monthly_waste = round(float(cursor.fetchone()['total_waste']), 2)
 
-            # Total kW: sum of wattage of all appliances / 1000
             cursor.execute("SELECT COALESCE(SUM(wattage), 0) AS total_w FROM appliance")
             total_kw = round(cursor.fetchone()['total_w'] / 1000, 2)
 
@@ -210,14 +190,12 @@ def get_stats():
     finally:
         con_local.close()
 
-
 @app.get("/api/v1/alerts")
 @login_required
 def get_alerts():
     con_local = get_db_connection()
     try:
         with con_local.cursor() as cursor:
-            # Fetch alerts from the last 3 minutes
             cursor.execute("""
                 SELECT id, timestamp, room_id, info
                 FROM alerts
@@ -226,11 +204,10 @@ def get_alerts():
             """)
             alerts = cursor.fetchall()
             
-            # Format results for the frontend
             formatted_alerts = []
             for a in alerts:
                 msg = a['info'].lower()
-                status = "warning" # Default
+                status = "warning"
                 
                 if "motion" in msg or "occupied" in msg:
                     status = "occupied"
@@ -239,7 +216,6 @@ def get_alerts():
                 elif "wastage" in msg or "warning" in msg:
                     status = "warning"
                 
-                # Format the time as HH:MM
                 time_str = a['timestamp'].strftime('%H:%M') if a['timestamp'] else "--:--"
                 
                 formatted_alerts.append({
@@ -254,7 +230,6 @@ def get_alerts():
     finally:
         con_local.close()
 
-
 @app.get("/api/v1/rooms")
 @app.get("/api/v1/room_list/")
 @login_required
@@ -262,21 +237,17 @@ def get_rooms_list():
     con_local = get_db_connection()
     try:
         with con_local.cursor() as cursor:
-            # Fetch all rooms
             cursor.execute("SELECT * FROM rooms")
             rooms = cursor.fetchall()
 
-            # Build a status lookup: room_id -> {status, p_count}
             cursor.execute("SELECT room_id, status, p_count FROM status")
             status_rows = cursor.fetchall()
             status_map = {r['room_id']: {"status": r['status'], "p_count": r.get('p_count', 0)} for r in status_rows}
 
-            # Build current_usage_kw: sum of wattage per room / 1000
             cursor.execute("SELECT room_id, SUM(wattage) AS total_w FROM appliance GROUP BY room_id")
             usage_rows = cursor.fetchall()
             usage_map = {r['room_id']: round(r['total_w'] / 1000, 2) for r in usage_rows}
 
-            # Daily energy bars (last 7 days, including today)
             cursor.execute("""
                 SELECT room_id, DATE(miniute) as d, COALESCE(SUM(loss), 0) AS daily_kwh
                 FROM energy
@@ -285,8 +256,6 @@ def get_rooms_list():
             """)
             daily_bars_rows = cursor.fetchall()
 
-            # Monthly energy bars (last 12 months, including this month)
-            # Use DATE_FORMAT(CURDATE() ,'%Y-%m-01') to get start of current month exactly
             cursor.execute("""
                 SELECT room_id, YEAR(miniute) as y, MONTH(miniute) as m, COALESCE(SUM(loss), 0) AS monthly_kwh
                 FROM energy
@@ -327,23 +296,19 @@ def get_rooms_list():
             room['p_count'] = s_data['p_count']
             room['current_usage_kw'] = usage_map.get(rid, 0)
 
-            # Map bars for this room
             room_d_bars = [daily_bars_map.get(rid, {}).get(d, 0.0) for d in last_7_days]
             room_m_bars = [monthly_bars_map.get(rid, {}).get(ym, 0.0) for ym in last_12_months]
             
             room['daily_usage_kwh'] = round(room_d_bars[-1], 3)
             room['monthly_usage_kwh'] = round(room_m_bars[-1], 3)
-            # Aliases for wastage-focused views
             room['daily_wastage_kwh'] = room['daily_usage_kwh']
             room['monthly_wastage_kwh'] = room['monthly_usage_kwh']
             room['daily_bars'] = room_d_bars
             room['monthly_bars'] = room_m_bars
 
-
         return jsonify({"rooms": rooms})
     finally:
         con_local.close()
-
 
 @app.get("/api/v1/room/<room_id>")
 @login_required
@@ -384,7 +349,7 @@ def room_daily_los_app(room_id):
     total = {}
     app_id = []
     for i in result:
-        if i['app_id']   not in app_id:
+        if i['app_id'] not in app_id:
             app_id.append(i['app_id'])
             total[i['app_id']] = 0
         total[i['app_id']] += i['loss']
@@ -404,12 +369,10 @@ def add_room():
 
     try:
         with con.cursor() as cursor:
-            # Insert room and get the new room_id
             query = "INSERT INTO rooms (no_of_appl, zone_count, ip, port) VALUES (%s, %s, %s, %s)"
             cursor.execute(query, (no_of_appl, zone_count, ip, port))
             room_id = cursor.lastrowid
             
-            # Insert each appliance belonging to this new room
             for i in appl:
                 app_query = "INSERT INTO appliance (room_id, wattage, type, zone) VALUES (%s, %s, %s, %s)"
                 cursor.execute(app_query, (room_id, i['wattage'], i['type'], i['zone']))
@@ -421,12 +384,9 @@ def add_room():
         logging.error(f"Error adding room: {e}")
         return jsonify({"error": "Database error"}), 500
 
-# ---- Report APIs ----
-
 @app.get("/api/v1/wastage/weekly")
 @login_required
 def weekly_wastage():
-    """Return daily total wastage (all rooms summed) for the last 7 days."""
     con_local = get_db_connection()
     try:
         with con_local.cursor() as cursor:
@@ -439,7 +399,6 @@ def weekly_wastage():
             """)
             rows = cursor.fetchall()
 
-        # Build a full 7-day series (fill missing days with 0)
         today = datetime.datetime.now().date()
         day_map = {}
         for r in rows:
@@ -450,7 +409,7 @@ def weekly_wastage():
             d = today - timedelta(days=i)
             result.append({
                 "date": d.isoformat(),
-                "label": d.strftime("%a"),   # Mon, Tue, ...
+                "label": d.strftime("%a"),
                 "wastage_wh": day_map.get(d, 0)
             })
 
@@ -458,11 +417,9 @@ def weekly_wastage():
     finally:
         con_local.close()
 
-
 @app.get("/api/v1/wastage/csv/<int:room_id>")
 @login_required
 def download_room_csv(room_id):
-    """Download an Excel file of daily wastage for a room over the last 30 days."""
     import pandas as pd
 
     con_local = get_db_connection()
@@ -509,11 +466,9 @@ def download_room_csv(room_id):
     finally:
         con_local.close()
 
-
 @app.get("/api/v1/camera/status")
 @login_required
 def camera_status():
-    """Quick health check for all room cameras. Returns {room_id: true/false}."""
     import threading
     con_local = get_db_connection()
     try:
@@ -543,19 +498,14 @@ def camera_status():
         threads.append(t)
         t.start()
 
-    # Wait max 3 seconds for all checks
     for t in threads:
         t.join(timeout=3)
 
-    # Any room not in results after timeout is down
     for r in rooms:
         if r['id'] not in results:
             results[r['id']] = False
 
     return jsonify(results)
-
-
-# ---- Mod-Only Endpoints ----
 
 @app.post('/api/v1/add_user/<userid>')
 def add_user(userid):
@@ -571,7 +521,6 @@ def add_user(userid):
     except pymysql.MySQLError as e:
         logging.error(f"Error adding user to database: {e}")
         return jsonify({"error": "Failed to add user"}), 500
-
 
 @app.get("/video/<ip>/<port>/")
 @login_required
@@ -593,16 +542,12 @@ def get_video(ip, port):
                 if cls_id == 1:
                     redaction(frame, box_obj.xyxy[0].tolist(), cls_id, float(box_obj.conf[0]))
 
-            # Calculate and draw FPS
             curr_time = time.time()
             fps = 1.0 / (curr_time - prev_time) if (curr_time - prev_time) > 0 else 0
             prev_time = curr_time
             cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
-            # Remove the stray "# Calculate FPS" comment if it was there
-            # (In your current file it's at line 248)
-
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 continue
@@ -647,19 +592,15 @@ def get_video_admin(ip, port):
 
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-
 states = {
-    "1e1": 0, "1e2": 0, "1e6": 0, # Room 1
-    "2e3": 0, "2e4": 0, "2e5": 0  # Room 2
+    "1e1": 0, "1e2": 0, "1e6": 0,
+    "2e3": 0, "2e4": 0, "2e5": 0
 }
 
 @app.route('/sync', methods=['POST'])
 def sync():
-    # ESP32 pings this to get the current "Source of Truth"
     return jsonify(states)
 
-# New URL Format to match your request: /<room>/<appliance>/<state>
-# Example: /2/e4/1 -> Key becomes "2e4"
 @app.route('/<room>/<appliance>/<int:state>')
 def update_state(room, appliance, state):
     key = f"{room}{appliance}"
@@ -668,8 +609,6 @@ def update_state(room, appliance, state):
         print(f"[System] {key} is now {'ON' if state == 1 else 'OFF'}")
         return jsonify({"status": "success", "device": key, "state": state})
     return jsonify({"status": "error", "message": "Invalid mapping"}), 404
-
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
